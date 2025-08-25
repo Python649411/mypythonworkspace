@@ -24,10 +24,10 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: Install Buildozer and Build APK
+    - name: Install Buildozer dependencies
       run: |
         sudo apt update
-        # Buildozer가 필요한 기본 apt 패키지 설치
+        # Buildozer가 필요한 apt 패키지 설치
         sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen
         
         # Buildozer 및 Cython 설치
@@ -37,15 +37,32 @@ jobs:
         # .bashrc에 Buildozer 경로 추가 및 적용 (pip install --user 경로)
         echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
         source ~/.bashrc
-        
+
+    - name: Build Kivy Android APK
+      run: |
+        # Buildozer는 SDK를 ~/.buildozer/android/platform/android-sdk 에 설치함
+        # NDK는 ~/.buildozer/android/platform/android-ndk-rXXx 에 설치함 (예: r25b)
+        # buildozer.spec의 android.api=33 이므로 build-tools/33.0.0 이 필요함.
+
+        # Buildozer가 사용하는 SDK/NDK 경로를 PATH에 명시적으로 추가
+        # 이 경로들은 Buildozer가 기본적으로 설치하는 위치를 가정함
+        export ANDROID_SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
+        # NDK 버전은 Buildozer가 설치하는 버전에 따라 다를 수 있으나, 일반적으로 r25b (NDK 25.2.9519653) 설치됨
+        export ANDROID_NDK_HOME="$HOME/.buildozer/android/platform/android-ndk-r25b" 
+
+        # Buildozer가 설치하는 build-tools/platform-tools/cmdline-tools 경로를 PATH에 추가
+        # 'latest/bin'은 cmdline-tools의 bin 경로를 의미 (sdkmanager 등이 위치)
+        export PATH="$PATH:$ANDROID_SDK_ROOT/build-tools/33.0.0:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
+
         # 빌드 디렉토리로 이동
         cd ${{ github.workspace }}
         
-        # Buildozer로 안드로이드 APK 빌드 (SDK/NDK는 Buildozer가 알아서 관리)
-        # buildozer.spec에 SDK/NDK 경로 강제 지정 (Buildozer가 찾을 수 있도록)
-        # Buildozer는 SDK를 ~/.buildozer/android/platform/android-sdk 에 설치함
-        # NDK는 ~/.buildozer/android/platform/android-ndk-rXXc 에 설치함
-        # 여기서는 Buildozer가 이 경로들을 자동으로 찾아 사용하도록 맡긴다.
+        # buildozer.spec에 SDK/NDK 경로 강제 지정 (Buildozer가 명확히 찾도록)
+        # 이 명령은 buildozer.spec 파일에 android.sdk_path 와 android.ndk_path 값을 추가하거나 수정함
+        sed -i "/^#\s*(str)\s*A\s*path\s*to\s*the\s*Android\s*SDK/a android.sdk_path = ${ANDROID_SDK_ROOT}" buildozer.spec
+        sed -i "/^#\s*(str)\s*A\s*path\s*to\s*the\s*Android\s*NDK/a android.ndk_path = ${ANDROID_NDK_HOME}" buildozer.spec
+
+        # 빌드 실행
         buildozer android debug
 
     - name: Upload APK
