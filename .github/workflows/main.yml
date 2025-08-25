@@ -49,14 +49,18 @@ jobs:
         # Install necessary SDK components using sdkmanager
         yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0" "cmdline-tools;latest" "ndk;25.2.9519653"
 
-        # Export Android SDK/NDK environment variables for Buildozer
+        # Export Android SDK/NDK environment variables
+        # Also set them in buildozer.spec for explicit pathing
         export ANDROID_SDK_ROOT=/opt/android-sdk
         export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/build-tools/33.0.0
         export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
         
-    - name: Build Kivy Android APK
-      run: |
+        # Navigate to the workspace and add SDK/NDK paths to buildozer.spec
         cd ${{ github.workspace }}
+        sed -i "/^#\s*(str)\s*A\s*path\s*to\s*the\s*Android\s*SDK/a android.sdk_path = /opt/android-sdk" buildozer.spec
+        sed -i "/^#\s*(str)\s*A\s*path\s*to\s*the\s*Android\s*NDK/a android.ndk_path = /opt/android-sdk/ndk/25.2.9519653" buildozer.spec
+        
+        # Build using Buildozer
         buildozer android debug
 
     - name: Upload APK
