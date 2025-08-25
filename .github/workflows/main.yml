@@ -27,46 +27,61 @@ jobs:
     - name: Install Buildozer dependencies
       run: |
         sudo apt update
-        # Buildozer가 필요한 apt 패키지 설치
         sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen
         
-        # Buildozer 및 Cython 설치
         pip install --user buildozer
         pip install cython
 
-        # .bashrc에 Buildozer 경로 추가 및 적용 (pip install --user 경로)
         echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
         source ~/.bashrc
 
-    - name: Build Kivy Android APK
+    - name: Build Kivy Android APK and Setup PATH dynamically
       run: |
-        # Buildozer는 SDK를 ~/.buildozer/android/platform/android-sdk 에 설치함
-        # NDK는 ~/.buildozer/android/platform/android-ndk-rXXx 에 설치함 (예: r25b)
-        # buildozer.spec의 android.api=33 이므로 build-tools/33.0.0 이 필요함.
+        cd ${{ github.workspace }}
 
-        # Buildozer가 사용하는 SDK/NDK 경로를 PATH에 명시적으로 추가
-        # 이 경로들은 Buildozer가 기본적으로 설치하는 위치를 가정함
-        export ANDROID_SDK_ROOT="$HOME/.buildozer/android/platform/android-sdk"
-        # NDK 버전은 Buildozer가 설치하는 버전에 따라 다를 수 있으나, 일반적으로 r25b (NDK 25.2.9519653) 설치됨
-        export ANDROID_NDK_HOME="$HOME/.buildozer/android/platform/android-ndk-r25b" 
+        # 첫 번째 빌드 시도 (SDK/NDK 다운로드 및 설치 유도)
+        # 이 단계에서 Buildozer가 필요한 파일들을 ~/.buildozer/android/platform 에 다운로드/설치함
+        # --no-build 옵션은 실제 앱 빌드는 하지 않고, 환경 설정만 하도록 유도
+        # || true 는 이 명령이 실패하더라도 다음 명령어를 실행하도록 함 (SDK/NDK가 없어서 실패하는 경우가 흔함)
+        buildozer android debug --no-build --verbose || true 
 
-        # Buildozer가 설치하는 build-tools/platform-tools/cmdline-tools 경로를 PATH에 추가
-        # 'latest/bin'은 cmdline-tools의 bin 경로를 의미 (sdkmanager 등이 위치)
+        # Buildozer가 설치한 SDK/NDK 경로를 동적으로 찾아서 환경 변수에 설정
+        # find 명령을 사용하여 정확한 설치 경로를 찾아냄
+        export ANDROID_SDK_ROOT=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-sdk-*" | head -n 1)
+        export ANDROID_NDK_HOME=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-ndk-r*" | head -n 1)
+        
+        # SDK 또는 NDK 경로를 찾지 못했다면 빌드 실패 처리
+        if [ -z "$ANDROID_SDK_ROOT" ]; then
+            echo "Error: Android SDK not found after initial buildozer run. Exiting."
+            exit 1
+        fi
+        if [ -z "$ANDROID_NDK_HOME" ]; then
+            echo "Error: Android NDK not found after initial buildozer run. Exiting."
+            exit 1
+        fi
+
+        # 동적으로 찾은 SDK/NDK 경로와 Build-tools 버전을 PATH에 추가
+        # build-tools 버전은 buildozer.spec의 android.api=33에 맞춰서 33.0.0으로 가정
         export PATH="$PATH:$ANDROID_SDK_ROOT/build-tools/33.0.0:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
 
-        # 빌드 디렉토리로 이동
-        cd ${{ github.workspace }}
-        
-        # buildozer.spec에 SDK/NDK 경로 강제 지정 (Buildozer가 명확히 찾도록)
-        # 이 명령은 buildozer.spec 파일에 android.sdk_path 와 android.ndk_path 값을 추가하거나 수정함
-        sed -i "/^#\s*(str)\s*A\s*path\s*to\s*the\s*Android\s*SDK/a android.sdk_path = ${ANDROID_SDK_ROOT}" buildozer.spec
-        sed -i "/^#\s*(str)\s*A\s*path\s*to\s*the\s*Android\s*NDK/a android.ndk_path = ${ANDROID_NDK_HOME}" buildozer.spec
+        # Android SDK 라이선스 동의 (Buildozer가 자동으로 하지 않는 경우 대비)
+        # sdkmanager는 ANDROID_SDK_ROOT 환경 변수를 사용하여 SDK 루트를 찾음
+        yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses
 
-        # 빌드 실행
+        # buildozer.spec에 SDK/NDK 경로 강제 지정
+        # sed 명령을 사용하여 buildozer.spec 파일에 android.sdk_path 와 android.ndk_path 값을 추가하거나 수정함
+        # 이미 존재하는 줄을 찾아서 교체하거나, 없으면 추가함 (SDK path의 주석 라인을 검색해서 그 라인에 삽입)
+        # sed -i "s|^#.*android.sdk_path.*|android.sdk_path = ${ANDROID_SDK_ROOT}|" buildozer.spec
+        # sed -i "s|^#.*android.ndk_path.*|android.ndk_path = ${ANDROID_NDK_HOME}|" buildozer.spec
+        # 만약 sed 명령이 잘 작동하지 않으면 다음 직접 추가 방식으로 변경 가능 (아래 2줄 대신)
+        echo "android.sdk_path = ${ANDROID_SDK_ROOT}" >> buildozer.spec
+        echo "android.ndk_path = ${ANDROID_NDK_HOME}" >> buildozer.spec
+
+        # 최종 빌드 시도
         buildozer android debug
 
     - name: Upload APK
-      uses: actions/upload-artifact@v4 # 최신 버전 v4 사용
+      uses: actions/upload-artifact@v4
       with:
         name: Jeommechu-APK
-        path: bin/*.apk # bin 폴더 아래에 있는 .apk 파일 업로드
+        path: bin/*.apk
