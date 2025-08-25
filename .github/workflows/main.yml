@@ -29,6 +29,7 @@ jobs:
         sudo apt update
         sudo apt install -y git zip unzip openjdk-17-jdk python3-pip build-essential autoconf libtool screen
         pip install --user buildozer
+        pip install cython
         echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
         source ~/.bashrc
 
