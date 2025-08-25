@@ -1,0 +1,44 @@
+name: Build Kivy Android APK
+
+on:
+  push:
+    branches: [ master ] # master 브랜치에 코드가 푸시될 때마다 워크플로우 실행
+  pull_request:
+    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행 (선택 사항)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # GitHub가 제공하는 최신 Ubuntu 환경에서 실행
+
+    steps:
+    - uses: actions/checkout@v2 # 저장소 코드 체크아웃 (빌드 환경으로 가져옴)
+
+    - name: Setup Java JDK
+      uses: actions/setup-java@v2
+      with:
+        distribution: 'zulu' # Java JDK 배포판 선택
+        java-version: '17' # JDK 17 버전 사용
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9' # Python 3.9 버전 사용 (Kivy 호환성 고려)
+
+    - name: Install dependencies for Buildozer
+      run: |
+        sudo apt update
+        sudo apt install -y git zip unzip openjdk-17-jdk python3-pip build-essential autoconf libtool screen
+        pip install --user buildozer
+        echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
+        source ~/.bashrc
+
+    - name: Build Kivy Android APK
+      run: |
+        cd ${{ github.workspace }}
+        buildozer android debug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v2 # 빌드된 APK 파일을 아티팩트로 업로드
+      with:
+        name: Jeommechu-APK
+        path: bin/*.apk # bin 폴더 아래에 있는 .apk 파일 업로드 (buildozer 기본 저장 경로)
