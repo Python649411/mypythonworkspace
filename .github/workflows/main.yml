@@ -38,7 +38,7 @@ jobs:
         buildozer android debug
 
     - name: Upload APK
-      uses: actions/upload-artifact@v2 # 빌드된 APK 파일을 아티팩트로 업로드
+      uses: actions/upload-artifact@v4 # 빌드된 APK 파일을 아티팩트로 업로드
       with:
         name: Jeommechu-APK
         path: bin/*.apk # bin 폴더 아래에 있는 .apk 파일 업로드 (buildozer 기본 저장 경로)
