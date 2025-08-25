@@ -4,67 +4,52 @@ on:
   push:
     branches: [ master ] # master 브랜치에 코드가 푸시될 때마다 워크플로우 실행
   pull_request:
-    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행 (선택 사항)
+    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행
 
 jobs:
   build:
     runs-on: ubuntu-latest # GitHub가 제공하는 최신 Ubuntu 환경에서 실행
 
     steps:
-    - uses: actions/checkout@v2 # 저장소 코드 체크아웃 (빌드 환경으로 가져옴)
+    - uses: actions/checkout@v2 # 저장소 코드 체크아웃
 
     - name: Setup Java JDK
       uses: actions/setup-java@v2
       with:
-        distribution: 'zulu' # Java JDK 배포판 선택
-        java-version: '17' # JDK 17 버전 사용
+        distribution: 'zulu'
+        java-version: '17'
 
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
-        python-version: '3.9' # Python 3.9 버전 사용 (Kivy 호환성 고려)
+        python-version: '3.9'
 
-    - name: Install Buildozer dependencies and Setup Android SDK
+    - name: Install Buildozer and Build APK
       run: |
         sudo apt update
+        # Buildozer가 필요한 기본 apt 패키지 설치
         sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen
+        
+        # Buildozer 및 Cython 설치
         pip install --user buildozer
-        pip install cython # Cython 설치 추가!
+        pip install cython
+
+        # .bashrc에 Buildozer 경로 추가 및 적용 (pip install --user 경로)
         echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
         source ~/.bashrc
-
-        # Create SDK directory and navigate into it
-        mkdir -p /opt/android-sdk
         
-        # Download Android Command Line Tools
-        wget -P /opt/android-sdk https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-
-        # Extract and set up the directory structure for cmdline-tools
-        cd /opt/android-sdk
-        mkdir -p cmdline-tools/latest
-        unzip commandlinetools-linux-9477386_latest.zip -d cmdline-tools/latest
-        mv cmdline-tools/latest/cmdline-tools/* cmdline-tools/latest/
-        rmdir cmdline-tools/latest/cmdline-tools
-
-        # Install necessary SDK components using sdkmanager
-        yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0" "cmdline-tools;latest" "ndk;25.2.9519653"
-
-        # Export Android SDK/NDK environment variables
-        # Also set them in buildozer.spec for explicit pathing
-        export ANDROID_SDK_ROOT=/opt/android-sdk
-        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/build-tools/33.0.0
-        export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
-        
-        # Navigate to the workspace and add SDK/NDK paths to buildozer.spec
+        # 빌드 디렉토리로 이동
         cd ${{ github.workspace }}
-        sed -i "/^#\s*(str)\s*A\s*path\s*to\s*the\s*Android\s*SDK/a android.sdk_path = /opt/android-sdk" buildozer.spec
-        sed -i "/^#\s*(str)\s*A\s*path\s*to\s*the\s*Android\s*NDK/a android.ndk_path = /opt/android-sdk/ndk/25.2.9519653" buildozer.spec
         
-        # Build using Buildozer
+        # Buildozer로 안드로이드 APK 빌드 (SDK/NDK는 Buildozer가 알아서 관리)
+        # buildozer.spec에 SDK/NDK 경로 강제 지정 (Buildozer가 찾을 수 있도록)
+        # Buildozer는 SDK를 ~/.buildozer/android/platform/android-sdk 에 설치함
+        # NDK는 ~/.buildozer/android/platform/android-ndk-rXXc 에 설치함
+        # 여기서는 Buildozer가 이 경로들을 자동으로 찾아 사용하도록 맡긴다.
         buildozer android debug
 
     - name: Upload APK
-      uses: actions/upload-artifact@v4 # v4로 수정 완료!
+      uses: actions/upload-artifact@v4 # 최신 버전 v4 사용
       with:
         name: Jeommechu-APK
-        path: bin/*.apk # bin 폴더 아래에 있는 .apk 파일 업로드 (buildozer 기본 저장 경로)
+        path: bin/*.apk # bin 폴더 아래에 있는 .apk 파일 업로드
