@@ -24,22 +24,43 @@ jobs:
       with:
         python-version: '3.9' # Python 3.9 버전 사용 (Kivy 호환성 고려)
 
-    - name: Install dependencies for Buildozer
+    - name: Install Buildozer dependencies and Setup Android SDK
       run: |
         sudo apt update
-        sudo apt install -y git zip unzip openjdk-17-jdk python3-pip build-essential autoconf libtool screen
+        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen
         pip install --user buildozer
-        pip install cython
+        pip install cython # Cython 설치 추가!
         echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
         source ~/.bashrc
 
+        # Create SDK directory and navigate into it
+        mkdir -p /opt/android-sdk
+        
+        # Download Android Command Line Tools
+        wget -P /opt/android-sdk https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+
+        # Extract and set up the directory structure for cmdline-tools
+        cd /opt/android-sdk
+        mkdir -p cmdline-tools/latest
+        unzip commandlinetools-linux-9477386_latest.zip -d cmdline-tools/latest
+        mv cmdline-tools/latest/cmdline-tools/* cmdline-tools/latest/
+        rmdir cmdline-tools/latest/cmdline-tools
+
+        # Install necessary SDK components using sdkmanager
+        yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0" "cmdline-tools;latest" "ndk;25.2.9519653"
+
+        # Export Android SDK/NDK environment variables for Buildozer
+        export ANDROID_SDK_ROOT=/opt/android-sdk
+        export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/build-tools/33.0.0
+        export ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+        
     - name: Build Kivy Android APK
       run: |
         cd ${{ github.workspace }}
         buildozer android debug
 
     - name: Upload APK
-      uses: actions/upload-artifact@v4 # 빌드된 APK 파일을 아티팩트로 업로드
+      uses: actions/upload-artifact@v4 # v4로 수정 완료!
       with:
         name: Jeommechu-APK
         path: bin/*.apk # bin 폴더 아래에 있는 .apk 파일 업로드 (buildozer 기본 저장 경로)
