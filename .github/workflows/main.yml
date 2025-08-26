@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # GitHub가 제공하는 최신 Ubuntu 환경에서 실행
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
@@ -31,6 +31,7 @@ jobs:
         path: |
           ${{ github.workspace }}/.buildozer/android/platform
           ${{ github.workspace }}/.buildozer/downloads
+          /opt/android-sdk # 캐시 경로에 SDK 폴더 추가 (수동 설치 경로)
         key: buildozer-cache-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
           buildozer-cache-
@@ -46,57 +47,53 @@ jobs:
         echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
         source ~/.bashrc
 
-    - name: Build Kivy Android APK and Setup PATH dynamically
+    # Buildozer가 아닌, 우리가 직접 SDK를 설치하는 단계
+    - name: Manual Android SDK/NDK Setup
       run: |
+        ANDROID_HOME=/opt/android-sdk # SDK 설치 경로 정의
+        mkdir -p "$ANDROID_HOME"
+        cd "$ANDROID_HOME"
+
+        # Download and extract Android Command Line Tools
+        # sdkmanager가 포함되어 있음
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        mkdir -p cmdline-tools/latest
+        unzip commandlinetools-linux-9477386_latest.zip -d cmdline-tools/latest
+        mv cmdline-tools/latest/cmdline-tools/* cmdline-tools/latest/
+        rmdir cmdline-tools/latest/cmdline-tools
+
+        # Setup PATH for sdkmanager and other tools
+        export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
+
+        # Install necessary SDK components, ensuring stable versions
+        # android.api=33에 맞춰 specific build-tools;33.0.0 명시
+        echo "Installing SDK components..."
+        yes | sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0" "cmdline-tools;latest" "ndk;25.2.9519653"
+
+        # Accept all licenses for installed components
+        echo "Accepting SDK licenses..."
+        yes | sdkmanager --licenses
+        
+        # Navigate back to workspace
         cd ${{ github.workspace }}
 
-        # buildozer android debug 실행 전 환경 변수 설정
-        # Buildozer는 SDK를 ~/.buildozer/android/platform/android-sdk 에 설치함
-        # NDK는 ~/.buildozer/android/platform/android-ndk-rXXx 에 설치함 (예: r25b)
+    - name: Build Kivy Android APK
+      run: |
+        # ANDROID_SDK_ROOT와 ANDROID_NDK_HOME을 Buildozer가 인식하도록 명확하게 설정
+        export ANDROID_SDK_ROOT="/opt/android-sdk"
+        export ANDROID_NDK_HOME="/opt/android-sdk/ndk/25.2.9519653" # NDK 설치 경로 확인 필요 (sdkmanager가 설치한 NDK의 최종 경로)
 
-        # 첫 번째 빌드 시도 (SDK/NDK 다운로드 및 설치 유도)
-        # --no-build를 사용하여 불필요한 전체 빌드는 피하고 환경 설정만 유도
-        # || true 를 통해 에러가 나더라도 스크립트가 중단되지 않고 다음 단계 진행 (SDK 없어서 실패하는 경우가 흔함)
-        buildozer android debug --no-build --verbose || true 
-        
-        # Buildozer가 설치한 SDK/NDK 경로를 동적으로 찾아서 환경 변수에 설정
-        export ANDROID_SDK_ROOT=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-sdk-*" | head -n 1)
-        export ANDROID_NDK_HOME=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-ndk-r*" | head -n 1)
+        # Buildozer가 사용할 PATH 변수 설정 (Build-tools/33.0.0 포함)
+        export PATH="$PATH:$ANDROID_SDK_ROOT/build-tools/33.0.0:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
 
-        # SDK 또는 NDK 경로를 찾지 못했다면 명확한 에러 메시지와 함께 종료
-        if [ -z "$ANDROID_SDK_ROOT" ]; then
-            echo "Error: Android SDK not found or not installed by Buildozer. Cannot proceed."
-            exit 1
-        fi
-        if [ -z "$ANDROID_NDK_HOME" ]; then
-            echo "Error: Android NDK not found or not installed by Buildozer. Cannot proceed."
-            exit 1
-        fi
-
-        # Build-tools 버전 동적으로 탐지 (가장 최신 버전을 찾거나, spec 파일에 명시된 버전을 사용)
-        BUILD_TOOLS_VERSION=$(find "$ANDROID_SDK_ROOT/build-tools/" -maxdepth 1 -type d -print -quit | grep -o '[0-9.]*$' | sort -V | tail -n 1)
-        if [ -z "$BUILD_TOOLS_VERSION" ]; then
-            echo "Warning: No build-tools found. Defaulting to 33.0.0 for PATH. Build might fail."
-            BUILD_TOOLS_VERSION="33.0.0" # 최후의 보루
-        fi
-        
-        # 동적으로 찾은 SDK/NDK 및 build-tools 경로를 PATH에 추가
-        export PATH="$PATH:$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
-
-        # Android SDK 라이선스 동의 (sdkmanager는 ANDROID_SDK_ROOT 환경 변수를 사용하여 SDK 루트를 찾음)
-        if [ -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-        else
-            echo "Warning: sdkmanager not found to accept licenses. Build might fail."
-        fi
-        
         # buildozer.spec에 SDK/NDK 경로 강제 지정 (Buildozer가 명확히 참조하도록)
+        # 기존 설정 삭제 후 추가 방식으로 확실하게 적용
         sed -i '/^android\.sdk_path/d' buildozer.spec
         sed -i '/^android\.ndk_path/d' buildozer.spec
         echo "android.sdk_path = ${ANDROID_SDK_ROOT}" >> buildozer.spec
         echo "android.ndk_path = ${ANDROID_NDK_HOME}" >> buildozer.spec
 
-        # 최종 빌드 실행 (Buildozer가 이제 모든 SDK/NDK 경로를 인지하고 빌드 시도)
+        # 최종 빌드 실행 (SDK/NDK는 이미 설치되었으므로 Buildozer가 이를 사용해야 함)
         buildozer android debug
 
     - name: Upload APK
@@ -105,21 +102,21 @@ jobs:
         name: Jeommechu-APK
         path: bin/*.apk
         
-    - name: Collect Full Build Logs # 스텝 분리: 로그 수집
-      if: always() # 빌드 성공/실패와 상관없이 항상 실행
+    - name: Collect Full Build Logs
+      if: always()
       run: |
-        cd ${{ github.workspace }} # 워크스페이스 루트로 이동
-        LOG_DIR=".buildozer/logs" # .buildozer/logs 디렉토리 경로
+        cd ${{ github.workspace }}
+        LOG_DIR=".buildozer/logs"
         if [ -d "$LOG_DIR" ]; then
-            zip -r build_log.zip "$LOG_DIR"/* # 로그 파일 압축
+            zip -r build_log.zip "$LOG_DIR"/*
             echo "Build log zipped successfully."
         else
             echo "Build log directory not found: $LOG_DIR"
-            touch build_log.zip # 로그 디렉토리가 없으면 빈 zip 파일 생성 (업로드 실패 방지)
+            touch build_log.zip
         fi
         
-    - name: Upload Full Build Logs # 스텝 분리: 로그 업로드
-      if: always() # 빌드 성공/실패와 상관없이 항상 실행
+    - name: Upload Full Build Logs
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: full-build-log
