@@ -1,4 +1,4 @@
-name: Build Kivy Android APK
+name: Build Kivy Android APK (GitHub Guide Method)
 
 on:
   push:
@@ -31,7 +31,6 @@ jobs:
         path: |
           ${{ github.workspace }}/.buildozer/android/platform
           ${{ github.workspace }}/.buildozer/downloads
-          /opt/android-sdk # 캐시 경로에 SDK 폴더 추가 (수동 설치 경로)
         key: buildozer-cache-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
           buildozer-cache-
@@ -47,59 +46,43 @@ jobs:
         echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
         source ~/.bashrc
 
-    # Buildozer가 아닌, 우리가 직접 SDK를 설치하는 단계
-    - name: Manual Android SDK/NDK Setup
+    - name: Clean Buildozer environment and Build APK
       run: |
-        ANDROID_HOME=/opt/android-sdk # SDK 설치 경로 정의
-        mkdir -p "$ANDROID_HOME"
-        cd "$ANDROID_HOME"
-
-        # Download and extract Android Command Line Tools
-        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-        mkdir -p cmdline-tools/latest
-        unzip commandlinetools-linux-9477386_latest.zip -d cmdline-tools/latest
-        mv cmdline-tools/latest/cmdline-tools/* cmdline-tools/latest/
-        rmdir cmdline-tools/latest/cmdline-tools
-
-        # Setup PATH for sdkmanager and other tools
-        export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
-
-        # Install necessary SDK components, ensuring stable versions
-        echo "Installing SDK components..."
-        yes | sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0" "cmdline-tools;latest" "ndk;25.2.9519653"
-
-        # Accept all licenses for installed components
-        echo "Accepting SDK licenses..."
-        yes | sdkmanager --licenses
-        
-        # Navigate back to workspace
         cd ${{ github.workspace }}
 
-    - name: Build Kivy Android APK
-      run: |
-        # ANDROID_SDK_ROOT와 ANDROID_NDK_HOME을 Buildozer가 인식하도록 명확하게 설정
-        export ANDROID_SDK_ROOT="/opt/android-sdk"
-        export ANDROID_NDK_HOME="/opt/android-sdk/ndk/25.2.9519653"
+        # GitHub 가이드에 따라 Buildozer 환경 클린업
+        buildozer appclean
+        rm -rf ~/.buildozer # ~/.buildozer 폴더 삭제
 
-        # Buildozer가 사용할 PATH 변수 설정 (Build-tools/33.0.0 포함)
-        export PATH="$PATH:$ANDROID_SDK_ROOT/build-tools/33.0.0:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
+        # Buildozer에 SDK/NDK 설치 및 빌드 위임
+        buildozer android debug --no-build --verbose || true # SDK/NDK 설치 유도 (실패해도 괜찮음)
 
-        # buildozer.spec에 build-tools 버전 고정! (이전 sed 대신 새 로직!)
-        # 기존 buildozer.spec에서 android.build_tools 라인을 찾아서 33.0.0으로 강제 변경
-        # 만약 android.build_tools 라인이 없다면, 파일 끝에 추가
-        if grep -q "^android\.build_tools" buildozer.spec; then
-            sed -i 's/^android\.build_tools.*$/android.build_tools = 33.0.0/' buildozer.spec
+        # Buildozer가 설치한 SDK 경로를 동적으로 찾아 라이선스 동의 (핵심!)
+        export ANDROID_SDK_ROOT=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-sdk-*" | head -n 1)
+
+        if [ -n "$ANDROID_SDK_ROOT" ]; then # SDK 경로를 찾았다면
+            # 모든 Android SDK 라이선스에 동의 (Aidl not found 해결 시도)
+            echo "Accepting all Android SDK licenses..."
+            yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+            echo "SDK license acceptance command completed."
         else
-            echo "android.build_tools = 33.0.0" >> buildozer.spec
+            echo "Warning: ANDROID_SDK_ROOT not found, skipping direct license acceptance."
+        fi
+        
+        # buildozer.spec에 SDK/NDK 경로 강제 지정 (이전 로직 유지)
+        # Buildozer가 올바른 경로를 사용하도록 명확히 알려줌
+        if [ -n "$ANDROID_SDK_ROOT" ]; then
+            sed -i '/^android\.sdk_path/d' buildozer.spec
+            echo "android.sdk_path = ${ANDROID_SDK_ROOT}" >> buildozer.spec
+        fi
+        
+        export ANDROID_NDK_HOME=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-ndk-r*" | head -n 1)
+        if [ -n "$ANDROID_NDK_HOME" ]; then
+            sed -i '/^android\.ndk_path/d' buildozer.spec
+            echo "android.ndk_path = ${ANDROID_NDK_HOME}" >> buildozer.spec
         fi
 
-        # buildozer.spec에 SDK/NDK 경로 강제 지정 (기존 로직 유지)
-        sed -i '/^android\.sdk_path/d' buildozer.spec
-        sed -i '/^android\.ndk_path/d' buildozer.spec
-        echo "android.sdk_path = ${ANDROID_SDK_ROOT}" >> buildozer.spec
-        echo "android.ndk_path = ${ANDROID_NDK_HOME}" >> buildozer.spec
-
-        # 최종 빌드 실행 (SDK/NDK는 이미 설치되었으므로 Buildozer가 이를 사용해야 함)
+        # 최종 빌드 실행 (여기서부터 Buildozer가 실제로 빌드 도구를 사용)
         buildozer android debug
 
     - name: Upload APK
