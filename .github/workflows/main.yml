@@ -55,7 +55,6 @@ jobs:
         cd "$ANDROID_HOME"
 
         # Download and extract Android Command Line Tools
-        # sdkmanager가 포함되어 있음
         wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
         mkdir -p cmdline-tools/latest
         unzip commandlinetools-linux-9477386_latest.zip -d cmdline-tools/latest
@@ -66,7 +65,6 @@ jobs:
         export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
 
         # Install necessary SDK components, ensuring stable versions
-        # android.api=33에 맞춰 specific build-tools;33.0.0 명시
         echo "Installing SDK components..."
         yes | sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0" "cmdline-tools;latest" "ndk;25.2.9519653"
 
@@ -81,13 +79,21 @@ jobs:
       run: |
         # ANDROID_SDK_ROOT와 ANDROID_NDK_HOME을 Buildozer가 인식하도록 명확하게 설정
         export ANDROID_SDK_ROOT="/opt/android-sdk"
-        export ANDROID_NDK_HOME="/opt/android-sdk/ndk/25.2.9519653" # NDK 설치 경로 확인 필요 (sdkmanager가 설치한 NDK의 최종 경로)
+        export ANDROID_NDK_HOME="/opt/android-sdk/ndk/25.2.9519653"
 
         # Buildozer가 사용할 PATH 변수 설정 (Build-tools/33.0.0 포함)
         export PATH="$PATH:$ANDROID_SDK_ROOT/build-tools/33.0.0:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
 
-        # buildozer.spec에 SDK/NDK 경로 강제 지정 (Buildozer가 명확히 참조하도록)
-        # 기존 설정 삭제 후 추가 방식으로 확실하게 적용
+        # buildozer.spec에 build-tools 버전 고정! (이전 sed 대신 새 로직!)
+        # 기존 buildozer.spec에서 android.build_tools 라인을 찾아서 33.0.0으로 강제 변경
+        # 만약 android.build_tools 라인이 없다면, 파일 끝에 추가
+        if grep -q "^android\.build_tools" buildozer.spec; then
+            sed -i 's/^android\.build_tools.*$/android.build_tools = 33.0.0/' buildozer.spec
+        else
+            echo "android.build_tools = 33.0.0" >> buildozer.spec
+        fi
+
+        # buildozer.spec에 SDK/NDK 경로 강제 지정 (기존 로직 유지)
         sed -i '/^android\.sdk_path/d' buildozer.spec
         sed -i '/^android\.ndk_path/d' buildozer.spec
         echo "android.sdk_path = ${ANDROID_SDK_ROOT}" >> buildozer.spec
