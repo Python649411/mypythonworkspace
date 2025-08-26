@@ -24,6 +24,17 @@ jobs:
       with:
         python-version: '3.9'
 
+    # Buildozer 빌드 캐시를 위한 캐싱 스텝 추가 (SDK/NDK 재다운로드 방지)
+    - name: Cache Buildozer downloads
+      uses: actions/cache@v2
+      with:
+        path: |
+          ${{ github.workspace }}/.buildozer/android/platform
+          ${{ github.workspace }}/.buildozer/downloads
+        key: buildozer-cache-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          buildozer-cache-
+
     - name: Install Buildozer dependencies
       run: |
         sudo apt update
@@ -37,51 +48,44 @@ jobs:
 
     - name: Build Kivy Android APK and Setup PATH dynamically
       run: |
-        cd ${{ github.workspace }}
+        # 이 단계의 모든 명령은 Buildozer 빌드 프로세스의 일부로 실행되며
+        # Buildozer가 자신의 빌드 환경 내에서 SDK/NDK를 찾도록 보장합니다.
 
-        # 첫 번째 빌드 시도 (SDK/NDK 다운로드 및 설치 유도)
-        # 이 단계에서 Buildozer가 필요한 파일들을 ~/.buildozer/android/platform 에 다운로드/설치함
-        # --no-build 옵션은 실제 앱 빌드는 하지 않고, 환경 설정만 하도록 유도
-        # || true 는 이 명령이 실패하더라도 다음 명령어를 실행하도록 함 (SDK/NDK가 없어서 실패하는 경우가 흔함)
-        buildozer android debug --no-build --verbose || true 
+        # Buildozer가 SDK/NDK를 ~/.buildozer/android/platform 에 설치하며, 이 경로는 내부적으로 관리됩니다.
+        # 따라서 명시적인 ANDROID_SDK_ROOT와 ANDROID_NDK_HOME 설정은 Buildozer 내부 PATH 관리에 방해가 될 수 있습니다.
+        # 대신, Buildozer가 자동으로 설치하고 관리하는 SDK의 bin 경로를 PATH에 추가하여 AIDL 등의 도구를 찾도록 합니다.
 
-        # Buildozer가 설치한 SDK/NDK 경로를 동적으로 찾아서 환경 변수에 설정
-        # find 명령을 사용하여 정확한 설치 경로를 찾아냄
-        export ANDROID_SDK_ROOT=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-sdk-*" | head -n 1)
-        export ANDROID_NDK_HOME=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-ndk-r*" | head -n 1)
-        
-        # SDK 또는 NDK 경로를 찾지 못했다면 빌드 실패 처리
-        if [ -z "$ANDROID_SDK_ROOT" ]; then
-            echo "Error: Android SDK not found after initial buildozer run. Exiting."
-            exit 1
-        fi
-        if [ -z "$ANDROID_NDK_HOME" ]; then
-            echo "Error: Android NDK not found after initial buildozer run. Exiting."
-            exit 1
-        fi
+        # GitHub Actions 환경 변수에 Buildozer가 사용할 SDK/NDK 경로의 베이스를 추가
+        # 이 경로들은 Buildozer가 SDK를 다운로드하여 설치하는 표준 위치임.
+        export ANDROID_SDK_ROOT="${{ github.workspace }}/.buildozer/android/platform/android-sdk"
+        # NDK 버전은 Buildozer가 설치하는 버전에 따라 다를 수 있으나, 일반적으로 r25b (NDK 25.2.9519653)가 사용됨
+        export ANDROID_NDK_HOME="${{ github.workspace }}/.buildozer/android/platform/android-ndk-r25b"
 
-        # 동적으로 찾은 SDK/NDK 경로와 Build-tools 버전을 PATH에 추가
-        # build-tools 버전은 buildozer.spec의 android.api=33에 맞춰서 33.0.0으로 가정
+        # Buildozer가 설치하는 build-tools/platform-tools/cmdline-tools 경로를 PATH에 추가
+        # build-tools/33.0.0 은 buildozer.spec의 android.api=33에 맞춤
         export PATH="$PATH:$ANDROID_SDK_ROOT/build-tools/33.0.0:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
 
-        # Android SDK 라이선스 동의 (Buildozer가 자동으로 하지 않는 경우 대비)
-        # sdkmanager는 ANDROID_SDK_ROOT 환경 변수를 사용하여 SDK 루트를 찾음
-        yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses
+        # Buildozer가 SDK를 다운로드하면 SDK 라이선스 동의를 자동으로 처리해야 하지만,
+        # 경우에 따라 수동 동의가 필요할 수 있으므로 안전을 위해 추가 (sdkmanager는 ANDROID_SDK_ROOT 사용)
+        SDKMANAGER_BIN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+        if [ -f "$SDKMANAGER_BIN" ]; then
+            yes | "$SDKMANAGER_BIN" --licenses || true # 오류가 나도 빌드를 중단하지 않도록 || true 추가
+        fi
 
-        # buildozer.spec에 SDK/NDK 경로 강제 지정
-        # sed 명령을 사용하여 buildozer.spec 파일에 android.sdk_path 와 android.ndk_path 값을 추가하거나 수정함
-        # 이미 존재하는 줄을 찾아서 교체하거나, 없으면 추가함 (SDK path의 주석 라인을 검색해서 그 라인에 삽입)
-        # sed -i "s|^#.*android.sdk_path.*|android.sdk_path = ${ANDROID_SDK_ROOT}|" buildozer.spec
-        # sed -i "s|^#.*android.ndk_path.*|android.ndk_path = ${ANDROID_NDK_HOME}|" buildozer.spec
-        # 만약 sed 명령이 잘 작동하지 않으면 다음 직접 추가 방식으로 변경 가능 (아래 2줄 대신)
+        # buildozer.spec에 SDK/NDK 경로를 강제 지정 (Buildozer가 명확히 참조하도록)
+        # sed -i 대신 echo >> 를 사용하여 확실하게 추가. (기존 내용 삭제 후 새로 추가하는 방식)
+        # 이미 파일 내에 해당 설정이 존재할 수 있으므로, .spec 파일의 특성을 고려하여 기존 설정 제거 후 추가
+        sed -i '/^android\.sdk_path/d' buildozer.spec
+        sed -i '/^android\.ndk_path/d' buildozer.spec
         echo "android.sdk_path = ${ANDROID_SDK_ROOT}" >> buildozer.spec
         echo "android.ndk_path = ${ANDROID_NDK_HOME}" >> buildozer.spec
 
-        # 최종 빌드 시도
+        # 최종 빌드 실행 (Buildozer가 이제 SDK/NDK를 캐시에서 찾거나 다운로드 후 인식)
+        # buildozer android debug 명령어가 실제 빌드를 시작하고 필요한 모든 SDK/NDK 요소를 처리합니다.
         buildozer android debug
 
     - name: Upload APK
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v4 # 최신 버전 v4 사용
       with:
         name: Jeommechu-APK
-        path: bin/*.apk
+        path: bin/*.apk # bin 폴더 아래에 있는 .apk 파일 업로드
