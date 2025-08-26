@@ -26,7 +26,7 @@ jobs:
 
     # Buildozer 빌드 캐시를 위한 캐싱 스텝 추가 (SDK/NDK 재다운로드 방지)
     - name: Cache Buildozer downloads
-      uses: actions/cache@v2
+      uses: actions/cache@v4 # <-- 여기가 문제의 라인! v4로 변경!
       with:
         path: |
           ${{ github.workspace }}/.buildozer/android/platform
@@ -81,7 +81,6 @@ jobs:
         echo "android.ndk_path = ${ANDROID_NDK_HOME}" >> buildozer.spec
 
         # 최종 빌드 실행 (Buildozer가 이제 SDK/NDK를 캐시에서 찾거나 다운로드 후 인식)
-        # buildozer android debug 명령어가 실제 빌드를 시작하고 필요한 모든 SDK/NDK 요소를 처리합니다.
         buildozer android debug
 
     - name: Upload APK
