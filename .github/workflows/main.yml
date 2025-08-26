@@ -8,10 +8,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # GitHub가 제공하는 최신 Ubuntu 환경에서 실행
+    runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2 # 저장소 코드 체크아웃
+    - uses: actions/checkout@v2
 
     - name: Setup Java JDK
       uses: actions/setup-java@v2
@@ -26,7 +26,7 @@ jobs:
 
     # Buildozer 빌드 캐시를 위한 캐싱 스텝 추가 (SDK/NDK 재다운로드 방지)
     - name: Cache Buildozer downloads
-      uses: actions/cache@v4 # <-- 여기가 문제의 라인! v4로 변경!
+      uses: actions/cache@v4
       with:
         path: |
           ${{ github.workspace }}/.buildozer/android/platform
@@ -46,45 +46,83 @@ jobs:
         echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
         source ~/.bashrc
 
-    - name: Build Kivy Android APK and Setup PATH dynamically
+    - name: Build Kivy Android APK
       run: |
-        # 이 단계의 모든 명령은 Buildozer 빌드 프로세스의 일부로 실행되며
-        # Buildozer가 자신의 빌드 환경 내에서 SDK/NDK를 찾도록 보장합니다.
+        cd ${{ github.workspace }}
 
-        # Buildozer가 SDK/NDK를 ~/.buildozer/android/platform 에 설치하며, 이 경로는 내부적으로 관리됩니다.
-        # 따라서 명시적인 ANDROID_SDK_ROOT와 ANDROID_NDK_HOME 설정은 Buildozer 내부 PATH 관리에 방해가 될 수 있습니다.
-        # 대신, Buildozer가 자동으로 설치하고 관리하는 SDK의 bin 경로를 PATH에 추가하여 AIDL 등의 도구를 찾도록 합니다.
+        # buildozer android debug 실행 전 환경 변수 설정
+        # Buildozer는 SDK를 ~/.buildozer/android/platform/android-sdk 에 설치함
+        # NDK는 ~/.buildozer/android/platform/android-ndk-rXXx 에 설치함 (예: r25b)
 
-        # GitHub Actions 환경 변수에 Buildozer가 사용할 SDK/NDK 경로의 베이스를 추가
-        # 이 경로들은 Buildozer가 SDK를 다운로드하여 설치하는 표준 위치임.
-        export ANDROID_SDK_ROOT="${{ github.workspace }}/.buildozer/android/platform/android-sdk"
-        # NDK 버전은 Buildozer가 설치하는 버전에 따라 다를 수 있으나, 일반적으로 r25b (NDK 25.2.9519653)가 사용됨
-        export ANDROID_NDK_HOME="${{ github.workspace }}/.buildozer/android/platform/android-ndk-r25b"
+        # 첫 번째 빌드 시도 (SDK/NDK 다운로드 및 설치 유도)
+        # --no-build를 사용하여 불필요한 전체 빌드는 피하고 환경 설정만 유도
+        # || true 를 통해 에러가 나더라도 스크립트가 중단되지 않고 다음 단계 진행 (SDK 없어서 실패하는 경우가 흔함)
+        buildozer android debug --no-build --verbose || true 
+        
+        # Buildozer가 설치한 SDK/NDK 경로를 동적으로 찾아서 환경 변수에 설정
+        export ANDROID_SDK_ROOT=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-sdk-*" | head -n 1)
+        export ANDROID_NDK_HOME=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-ndk-r*" | head -n 1)
 
-        # Buildozer가 설치하는 build-tools/platform-tools/cmdline-tools 경로를 PATH에 추가
-        # build-tools/33.0.0 은 buildozer.spec의 android.api=33에 맞춤
-        export PATH="$PATH:$ANDROID_SDK_ROOT/build-tools/33.0.0:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
-
-        # Buildozer가 SDK를 다운로드하면 SDK 라이선스 동의를 자동으로 처리해야 하지만,
-        # 경우에 따라 수동 동의가 필요할 수 있으므로 안전을 위해 추가 (sdkmanager는 ANDROID_SDK_ROOT 사용)
-        SDKMANAGER_BIN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-        if [ -f "$SDKMANAGER_BIN" ]; then
-            yes | "$SDKMANAGER_BIN" --licenses || true # 오류가 나도 빌드를 중단하지 않도록 || true 추가
+        # SDK 또는 NDK 경로를 찾지 못했다면 명확한 에러 메시지와 함께 종료
+        if [ -z "$ANDROID_SDK_ROOT" ]; then
+            echo "Error: Android SDK not found or not installed by Buildozer. Cannot proceed."
+            exit 1
+        fi
+        if [ -z "$ANDROID_NDK_HOME" ]; then
+            echo "Error: Android NDK not found or not installed by Buildozer. Cannot proceed."
+            exit 1
         fi
 
-        # buildozer.spec에 SDK/NDK 경로를 강제 지정 (Buildozer가 명확히 참조하도록)
+        # Build-tools 버전 동적으로 탐지 (가장 최신 버전을 찾거나, spec 파일에 명시된 버전을 사용)
+        # Buildozer는 android.api=33에 맞춰 33.0.0을 설치할 것으로 예상하지만, 안전을 위해 설치된 build-tools 디렉토리 중 가장 최신 버전 선택
+        BUILD_TOOLS_VERSION=$(find "$ANDROID_SDK_ROOT/build-tools/" -maxdepth 1 -type d -print -quit | grep -o '[0-9.]*$' | sort -V | tail -n 1)
+        if [ -z "$BUILD_TOOLS_VERSION" ]; then
+            echo "Warning: No build-tools found. Defaulting to 33.0.0 for PATH. Build might fail."
+            BUILD_TOOLS_VERSION="33.0.0" # 최후의 보루
+        fi
+        
+        # 동적으로 찾은 SDK/NDK 및 build-tools 경로를 PATH에 추가
+        export PATH="$PATH:$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS_VERSION:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
+
+        # Android SDK 라이선스 동의 (sdkmanager는 ANDROID_SDK_ROOT 환경 변수를 사용하여 SDK 루트를 찾음)
+        # yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true 를 사용
+        # (명령 실행 시 오류가 나도 빌드를 중단하지 않고 다음 스텝 진행)
+        if [ -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+        else
+            echo "Warning: sdkmanager not found to accept licenses. Build might fail."
+        fi
+        
+        # buildozer.spec에 SDK/NDK 경로 강제 지정 (Buildozer가 명확히 참조하도록)
         # sed -i 대신 echo >> 를 사용하여 확실하게 추가. (기존 내용 삭제 후 새로 추가하는 방식)
-        # 이미 파일 내에 해당 설정이 존재할 수 있으므로, .spec 파일의 특성을 고려하여 기존 설정 제거 후 추가
         sed -i '/^android\.sdk_path/d' buildozer.spec
-        sed -i '/^android\.ndk_path/d' buildozer.spec
+        sed -i '/^android\.ndk_path/d/g' buildozer.spec # 기존 ndk_path 제거
         echo "android.sdk_path = ${ANDROID_SDK_ROOT}" >> buildozer.spec
         echo "android.ndk_path = ${ANDROID_NDK_HOME}" >> buildozer.spec
 
-        # 최종 빌드 실행 (Buildozer가 이제 SDK/NDK를 캐시에서 찾거나 다운로드 후 인식)
+        # 최종 빌드 실행 (Buildozer가 이제 모든 SDK/NDK 경로를 인지하고 빌드 시도)
         buildozer android debug
 
     - name: Upload APK
-      uses: actions/upload-artifact@v4 # 최신 버전 v4 사용
+      uses: actions/upload-artifact@v4
       with:
         name: Jeommechu-APK
-        path: bin/*.apk # bin 폴더 아래에 있는 .apk 파일 업로드
+        path: bin/*.apk
+        
+    - name: Collect and Upload Full Build Log
+      if: always() # 빌드 성공/실패와 상관없이 항상 실행
+      run: |
+        # 빌드 로그가 있는 디렉토리를 찾아 압축
+        LOG_DIR="${{ github.workspace }}/.buildozer/logs"
+        if [ -d "$LOG_DIR" ]; then
+            zip -r build_log.zip "$LOG_DIR"/*
+            echo "Build log zipped successfully."
+        else
+            echo "Build log directory not found: $LOG_DIR"
+            # 빈 zip 파일이라도 생성하여 아티팩트 업로드를 막지 않음
+            touch build_log.zip
+        fi
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-build-log
+        path: build_log.zip
