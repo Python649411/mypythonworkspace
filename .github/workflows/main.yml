@@ -1,112 +1,39 @@
-name: Build Kivy Android APK (GitHub Guide Method)
+name: Build Kivy Android APK # 워크플로우 이름
 
 on:
   push:
-    branches: [ master ] # master 브랜치에 코드가 푸시될 때마다 워크플로우 실행
-  pull_request:
-    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행
+    branches:
+      - main # main 브랜치에 푸시할 때마다 실행되게
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # 우분투 서버에서 돌릴 거야
 
     steps:
-    - uses: actions/checkout@v2
+    - name: Checkout code
+      uses: actions/checkout@v4 # 코드 가져오기
 
-    - name: Setup Java JDK
-      uses: actions/setup-java@v2
+    - name: Setup Python
+      uses: actions/setup-python@v5
       with:
-        distribution: 'zulu'
-        java-version: '17'
+        python-version: '3.9' # 파이썬 버전 맞춰주고
 
-    - name: Set up Python
-      uses: actions/setup-python@v2
+    - name: Set up Java JDK
+      uses: actions/setup-java@v4
       with:
-        python-version: '3.9'
+        distribution: 'temurin'
+        java-version: '17' # 자바 버전도 맞춰주고
 
-    # Buildozer 빌드 캐시를 위한 캐싱 스텝 추가 (SDK/NDK 재다운로드 방지)
-    - name: Cache Buildozer downloads
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ github.workspace }}/.buildozer/android/platform
-          ${{ github.workspace }}/.buildozer/downloads
-        key: buildozer-cache-${{ hashFiles('buildozer.spec') }}
-        restore-keys: |
-          buildozer-cache-
+    - name: Install Buildozer # Buildozer 설치!
+      run: pip install buildozer
 
-    - name: Install Buildozer dependencies
+    - name: Build Kivy APK # APK 빌드 명령!
       run: |
-        sudo apt update
-        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen
-        
-        pip install --user buildozer
-        pip install cython
-
-        echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
-        source ~/.bashrc
-
-    - name: Clean Buildozer environment and Build APK
-      run: |
-        cd ${{ github.workspace }}
-
-        # GitHub 가이드에 따라 Buildozer 환경 클린업
-        buildozer appclean
-        rm -rf ~/.buildozer # ~/.buildozer 폴더 삭제
-
-        # Buildozer에 SDK/NDK 설치 및 빌드 위임
-        buildozer android debug --no-build --verbose || true # SDK/NDK 설치 유도 (실패해도 괜찮음)
-
-        # Buildozer가 설치한 SDK 경로를 동적으로 찾아 라이선스 동의 (핵심!)
-        export ANDROID_SDK_ROOT=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-sdk-*" | head -n 1)
-
-        if [ -n "$ANDROID_SDK_ROOT" ]; then # SDK 경로를 찾았다면
-            # 모든 Android SDK 라이선스에 동의 (Aidl not found 해결 시도)
-            echo "Accepting all Android SDK licenses..."
-            yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-            echo "SDK license acceptance command completed."
-        else
-            echo "Warning: ANDROID_SDK_ROOT not found, skipping direct license acceptance."
-        fi
-        
-        # buildozer.spec에 SDK/NDK 경로 강제 지정 (이전 로직 유지)
-        # Buildozer가 올바른 경로를 사용하도록 명확히 알려줌
-        if [ -n "$ANDROID_SDK_ROOT" ]; then
-            sed -i '/^android\.sdk_path/d' buildozer.spec
-            echo "android.sdk_path = ${ANDROID_SDK_ROOT}" >> buildozer.spec
-        fi
-        
-        export ANDROID_NDK_HOME=$(find "$HOME/.buildozer/android/platform/" -maxdepth 1 -type d -name "android-ndk-r*" | head -n 1)
-        if [ -n "$ANDROID_NDK_HOME" ]; then
-            sed -i '/^android\.ndk_path/d' buildozer.spec
-            echo "android.ndk_path = ${ANDROID_NDK_HOME}" >> buildozer.spec
-        fi
-
-        # 최종 빌드 실행 (여기서부터 Buildozer가 실제로 빌드 도구를 사용)
-        buildozer android debug
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: Jeommechu-APK
-        path: bin/*.apk
-        
-    - name: Collect Full Build Logs
-      if: always()
-      run: |
-        cd ${{ github.workspace }}
-        LOG_DIR=".buildozer/logs"
-        if [ -d "$LOG_DIR" ]; then
-            zip -r build_log.zip "$LOG_DIR"/*
-            echo "Build log zipped successfully."
-        else
-            echo "Build log directory not found: $LOG_DIR"
-            touch build_log.zip
-        fi
-        
-    - name: Upload Full Build Logs
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: full-build-log
-        path: build_log.zip
+        buildozer android debug deploy run # 디버그 버전으로 빌드하는 명령어 (정확한건 너 buildozer.spec 봐야함)
+        # buildozer init # 이걸 미리 로컬에서 해서 buildozer.spec 파일을 만들었어야 해!
+    
+    # - name: Upload APK artifact # 이건 APK를 GitHub Actions 빌드 결과로 저장하고 싶을 때 추가하는 거야
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: android-apk
+    #     path: bin/*.apk # buildozer가 APK를 만드는 경로
