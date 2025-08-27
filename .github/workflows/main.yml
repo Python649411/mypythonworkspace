@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Debug Mode)
+name: Build Kivy Android APK (Current CmdLineTools URL)
 
 on:
   push:
@@ -65,7 +65,7 @@ jobs:
         echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> $GITHUB_ENV # Java Path
         
         # sdkmanager 설치 및 라이선스 수락 시도 (GitHub Actions 환경에서)
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-8500642_latest.zip -O android-cmdline-tools.zip
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-current.zip -O android-cmdline-tools.zip # <--- ✨ 올바른 URL로 수정됨 ✨
         unzip -q android-cmdline-tools.zip -d $HOME/cmdline-tools
         mkdir -p ${ANDROID_HOME}
         mv $HOME/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools
