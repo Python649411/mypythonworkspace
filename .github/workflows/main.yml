@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Force Stable Build-Tools)
+name: Build Kivy Android APK (Targeted Build-Tools)
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
         # GitHub Actions 환경변수 강제 적용
         source /etc/profile || true # profile 소싱 시도
 
-    - name: Aggressive Clean and Build APK (Let Buildozer handle SDK installation)
+    - name: Aggressive Clean and Build APK (Let Buildozer handle SDK installation via buildozer.spec)
       run: |
         set -x # <--- ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
@@ -56,40 +56,8 @@ jobs:
         rm -rf .buildozer  # buildozer 작업 디렉토리 강제 삭제
         rm -rf ~/.buildozer # 사용자 홈 디렉토리의 buildozer 캐시도 삭제
 
-        # --- ✨ 순서가 변경된 핵심 부분 시작 ✨ ---
-        # 1. Android SDK Command-line Tools 설치 (sdkmanager가 PATH에 들어갈 수 있도록)
-        echo "Debugging: Downloading Android Command-line Tools and setting PATH..."
-        mkdir -p $HOME/.android
-        touch $HOME/.android/repositories.cfg # repositories.cfg 파일이 없으면 sdkmanager가 오류남
-
-        # SDK 경로 설정을 위한 ANDROID_HOME 설정
-        echo "ANDROID_HOME=${{ github.workspace }}/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
-        echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> $GITHUB_ENV # Java Path
-
-        # sdkmanager 설치 및 PATH 설정 (여기서 PATH에 sdkmanager가 추가됨)
-        curl -fL --retry 5 --retry-delay 10 https://dl.google.com/android/repository/commandlinetools-linux-current.zip -o android-cmdline-tools.zip
-        unzip -q android-cmdline-tools.zip -d $HOME/cmdline-tools
-        mkdir -p ${ANDROID_HOME}
-        mv $HOME/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools # tools 폴더명을 그대로 유지
-
-        echo "sdk.dir=${ANDROID_HOME}" >> $HOME/.gradle/gradle.properties # Gradle이 SDK를 찾도록 설정 (혹시 모를 오류 방지)
-
-        # sdkmanager 실행에 필요한 PATH 변수 설정 (이게 중요!)
-        export PATH="${ANDROID_HOME}/cmdline-tools/tools/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/bin:$PATH"
-        # 이전 버전의 commandlinetools는 tools/bin 아래에 sdkmanager가 있었으나, 최신 버전은 cmdline-tools/bin 아래에 있음
-        # 안정성을 위해 두 경로 모두 추가
-
-        echo "Debugging: sdkmanager should now be in PATH."
-
-        # 2. 모든 라이선스 수동 동의 (이제 sdkmanager가 PATH에 있으니 작동해야 함!)
-        echo "Debugging: Accepting Android SDK licenses..."
-        yes | sdkmanager "platform-tools" # <--- ✨ 새롭게 추가된 라인: platform-tools 강제 설치! ✨
-        yes | sdkmanager "build-tools;34.0.0" # <--- 기존 라인: 특정 build-tools 강제 설치!
-        yes | sdkmanager --licenses # <--- 기존 라인: 모든 라이선스 수동 동의 (y를 자동 입력)
-        echo "All Android SDK licenses accepted."
-        # --- ✨ 순서가 변경된 핵심 부분 끝 ✨ ---
-
-        # 최종 APK 빌드 시도
+        # Buildozer에게 모든 SDK/NDK 설치 및 라이선스 동의를 맡김!
+        # buildozer.spec에 지정된 build_tools 버전을 사용
         buildozer android debug
 
     - name: Upload APK
