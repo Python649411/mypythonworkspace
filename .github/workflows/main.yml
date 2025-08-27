@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Buildozer handles SDK)
+name: Build Kivy Android APK (Force Build-Tools 34.0.0)
 
 on:
   push:
@@ -56,9 +56,20 @@ jobs:
         rm -rf .buildozer  # buildozer 작업 디렉토리 강제 삭제
         rm -rf ~/.buildozer # 사용자 홈 디렉토리의 buildozer 캐시도 삭제
 
-        # 이제 Buildozer에게 모든 SDK/NDK 설치 및 라이선스 동의를 맡김!
-        # 필요한 환경 변수 (JAVA_HOME 등)는 GitHub Actions runner에 이미 설정되어 있을 것
-        # buildozer android debug 명령어가 필요한 SDK를 다운로드하고 설치하며, 라이선스 동의를 시도함
+        # Android SDK/NDK 라이선스 강제 수락 (가장 중요!)
+        mkdir -p $HOME/.android
+        touch $HOME/.android/repositories.cfg # repositories.cfg 파일이 없으면 sdkmanager가 오류남
+        
+        # SDK 경로 설정을 위한 ANDROID_HOME 설정
+        echo "ANDROID_HOME=${{ github.workspace }}/.buildozer/android/platform/android-sdk" >> $GITHUB_ENV
+        echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> $GITHUB_ENV # Java Path
+        
+        # sdkmanager 설치 및 라이선스 수락 시도 (GitHub Actions 환경에서)
+        yes | sdkmanager "build-tools;34.0.0" # <--- ✨ 이 한 줄이 추가됨! 특정 build-tools 강제 설치! ✨
+        yes | sdkmanager --licenses # <--- 모든 라이선스 수동 동의 (y를 자동 입력)
+        echo "All Android SDK licenses accepted."
+
+        # 최종 APK 빌드 시도
         buildozer android debug
 
     - name: Upload APK
