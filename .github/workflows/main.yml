@@ -1,42 +1,86 @@
-# .github/workflows/main.yml 파일 내용 시작
-name: Kivy Android APK 빌드 # 이 워크플로우의 이름. GitHub Actions 탭에서 볼 수 있음
+name: Build Kivy Android APK (Revert to Kivy)
 
 on:
   push:
-    branches:
-      - main # main 브랜치에 코드를 푸시(push)할 때마다 이 빌드가 자동으로 실행돼!
-      # - develop # 만약 develop 브랜치에도 적용하고 싶으면 추가해
-  # workflow_dispatch: # 수동으로 빌드를 시작하고 싶을 때 이 주석을 풀어주세요.
-                     # GitHub Actions 탭에서 'Run workflow' 버튼이 생겨요.
+    branches: [ master ] # master 브랜치에 코드가 푸시될 때마다 워크플로우 실행
+  pull_request:
+    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행
 
 jobs:
-  build_android_apk: # 빌드 작업의 이름
-    runs-on: ubuntu-latest # 빌드를 실행할 운영체제 환경. GitHub에서 제공하는 최신 우분투 서버!
+  build:
+    runs-on: ubuntu-latest
 
     steps:
-    - name: 🔍 코드 Checkout
-      uses: actions/checkout@v4 # GitHub 레포지토리의 코드를 가져옴
+    - uses: actions/checkout@v2
 
-    - name: 🐍 Python 설치 및 설정
-      uses: actions/setup-python@v5
+    - name: Setup Java JDK
+      uses: actions/setup-java@v2
       with:
-        python-version: '3.9' # Kivy 및 Buildozer가 잘 호환되는 Python 3.9 버전 (필요시 조절)
+        distribution: 'zulu'
+        java-version: '17'
 
-    - name: ☕ Java JDK 설치 및 설정
-      uses: actions/setup-java@v4
+    - name: Set up Python
+      uses: actions/setup-python@v2
       with:
-        distribution: 'temurin' # AdoptOpenJDK 계열의 OpenJDK 배포판
-        java-version: '17' # Android 빌드에 필요한 Java 17 버전 (최신 빌드를 위해 권장)
+        python-version: '3.9'
 
-    - name: ⚙️ Buildozer 설치
-      run: pip install buildozer # 빌드도저 패키지 설치
-
-    - name: 🚀 Kivy APK 빌드 시작!
-      run: buildozer android debug # 대망의 안드로이드 APK 디버그 빌드 명령어!
-
-    - name: ⬆️ 빌드된 APK 아티팩트 업로드 (선택사항이지만 강력 권장!)
-      uses: actions/upload-artifact@v4 # 빌드된 파일을 GitHub Actions 결과물로 업로드하는 액션
+    # Buildozer 빌드 캐시를 위한 캐싱 스텝 추가
+    # 이전 빌드에서 다운로드된 SDK/NDK를 재사용하여 빌드 시간 단축
+    - name: Cache Buildozer downloads
+      uses: actions/cache@v4
       with:
-        name: 점메추_앱_APK # 업로드될 파일의 이름
-        path: bin/*.apk # Buildozer가 APK 파일을 생성하는 기본 경로.
-                        # 빌드 후 이 경로에 APK 파일이 생길 거야!
+        path: |
+          ${{ github.workspace }}/.buildozer/android/platform
+          ${{ github.workspace }}/.buildozer/downloads
+        key: buildozer-cache-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          buildozer-cache-
+
+    - name: Install Buildozer dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen
+        
+        pip install --user buildozer
+        pip install cython
+
+        echo "export PATH=$HOME/.local/bin:$PATH" >> ~/.bashrc
+        source ~/.bashrc
+
+    - name: Clean Buildozer environment and Build APK
+      run: |
+        cd ${{ github.workspace }}
+
+        # 환경 클린업 (이전 실패 이력을 없애기 위함)
+        buildozer appclean
+        rm -rf ~/.buildozer # 혹시 모를 문제 해결을 위해 캐시 폴더까지 완전히 삭제
+
+        # buildozer.spec에 설정된 API 레벨에 맞는 SDK/NDK를 Buildozer가 직접 설치하도록 위임
+        # (이번에는 별도의 sdkmanager 호출 없이 buildozer 자체에 맡김)
+        buildozer android debug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Jeommechu-APK
+        path: bin/*.apk
+        
+    - name: Collect Full Build Logs
+      if: always() # 빌드 성공/실패 여부와 상관없이 항상 로그 수집
+      run: |
+        cd ${{ github.workspace }}
+        LOG_DIR=".buildozer/logs"
+        if [ -d "$LOG_DIR" ]; then
+            zip -r build_log.zip "$LOG_DIR"/*
+            echo "Build log zipped successfully."
+        else
+            echo "Build log directory not found: $LOG_DIR"
+            touch build_log.zip # 디렉토리가 없으면 빈 파일 생성
+        fi
+        
+    - name: Upload Full Build Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-build-log
+        path: build_log.zip
