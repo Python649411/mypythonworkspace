@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Aggressive Clean)
+name: Build Kivy Android APK (Debug Mode)
 
 on:
   push:
@@ -41,11 +41,18 @@ jobs:
 
     - name: Aggressive Clean and Build APK (Removes all Buildozer cached files and rebuilds from scratch)
       run: |
+        set -x # <--- ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
+
+        echo "Debugging: Step starts here."
+        echo "Debugging: Current working directory is $(pwd)" # 현재 작업 디렉토리 출력
+        echo "Debugging: Contents of the GitHub workspace directory (${{ github.workspace }}):"
+        ls -la ${{ github.workspace }} # <--- ✨ GitHub workspace의 내용물을 보여줘! ✨
+        
         # Kivy 프로젝트 폴더로 이동 (이 폴더 안에 buildozer.spec이 있어야 함)
         cd ${{ github.workspace }}
+        echo "Debugging: Successfully changed directory to ${{ github.workspace }}" # 디렉토리 이동 성공 메시지
 
         # 강력한 클린업: 이전 빌드 흔적, 다운로드된 SDK/NDK, 모든 캐시 완전 삭제
-        # buildozer appclean, buildozer distclean 대신 rm -rf 로 강제 삭제
         rm -rf .buildozer  # buildozer 작업 디렉토리 강제 삭제
         rm -rf ~/.buildozer # 사용자 홈 디렉토리의 buildozer 캐시도 삭제
 
