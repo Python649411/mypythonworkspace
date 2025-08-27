@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Current CmdLineTools URL)
+name: Build Kivy Android APK (Curl Download)
 
 on:
   push:
@@ -27,7 +27,7 @@ jobs:
     - name: Install Buildozer dependencies and Buildozer itself
       run: |
         sudo apt update
-        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen openjdk-17-jdk # openjdk-17-jdk 추가 (혹시 Java PATH 문제 있을까봐)
+        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen openjdk-17-jdk curl # curl 패키지 설치 추가
         
         pip install --user buildozer
         pip install cython # Cython은 Kivy 컴파일에 필수
@@ -65,7 +65,7 @@ jobs:
         echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> $GITHUB_ENV # Java Path
         
         # sdkmanager 설치 및 라이선스 수락 시도 (GitHub Actions 환경에서)
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-current.zip -O android-cmdline-tools.zip # <--- ✨ 올바른 URL로 수정됨 ✨
+        curl -sL https://dl.google.com/android/repository/commandlinetools-linux-current.zip -o android-cmdline-tools.zip # <--- ✨ curl로 변경됨 ✨
         unzip -q android-cmdline-tools.zip -d $HOME/cmdline-tools
         mkdir -p ${ANDROID_HOME}
         mv $HOME/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools
