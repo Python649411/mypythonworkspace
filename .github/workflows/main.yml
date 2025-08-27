@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Curl Download)
+name: Build Kivy Android APK (Curl + File Check)
 
 on:
   push:
@@ -66,6 +66,13 @@ jobs:
         
         # sdkmanager 설치 및 라이선스 수락 시도 (GitHub Actions 환경에서)
         curl -sL https://dl.google.com/android/repository/commandlinetools-linux-current.zip -o android-cmdline-tools.zip # <--- ✨ curl로 변경됨 ✨
+        
+        # --- DEBUGGING LINES START ---
+        echo "Debugging: Downloaded file properties:"
+        ls -l android-cmdline-tools.zip # <--- ✨ 파일 크기 확인! ✨
+        file --mime-type android-cmdline-tools.zip # <--- ✨ 파일 종류 확인! (zip인지 HTML인지!) ✨
+        # --- DEBUGGING LINES END ---
+        
         unzip -q android-cmdline-tools.zip -d $HOME/cmdline-tools
         mkdir -p ${ANDROID_HOME}
         mv $HOME/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools
