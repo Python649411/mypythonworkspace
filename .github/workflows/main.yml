@@ -22,7 +22,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
-        python-version: '3.8' # <--- 여기에 Python 3.8이 설정되어 있어!
+        python-version: '3.7' # <--- 여기에 Python 3.8이 설정되어 있어!
 
     # Buildozer 빌드 캐시를 위한 캐싱 스텝 추가
     # 이전 빌드에서 다운로드된 SDK/NDK를 재사용하여 빌드 시간 단축
