@@ -1,39 +1,42 @@
-name: Build Kivy Android APK # 워크플로우 이름
+# .github/workflows/main.yml 파일 내용 시작
+name: Kivy Android APK 빌드 # 이 워크플로우의 이름. GitHub Actions 탭에서 볼 수 있음
 
 on:
   push:
     branches:
-      - main # main 브랜치에 푸시할 때마다 실행되게
+      - main # main 브랜치에 코드를 푸시(push)할 때마다 이 빌드가 자동으로 실행돼!
+      # - develop # 만약 develop 브랜치에도 적용하고 싶으면 추가해
+  # workflow_dispatch: # 수동으로 빌드를 시작하고 싶을 때 이 주석을 풀어주세요.
+                     # GitHub Actions 탭에서 'Run workflow' 버튼이 생겨요.
 
 jobs:
-  build:
-    runs-on: ubuntu-latest # 우분투 서버에서 돌릴 거야
+  build_android_apk: # 빌드 작업의 이름
+    runs-on: ubuntu-latest # 빌드를 실행할 운영체제 환경. GitHub에서 제공하는 최신 우분투 서버!
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4 # 코드 가져오기
+    - name: 🔍 코드 Checkout
+      uses: actions/checkout@v4 # GitHub 레포지토리의 코드를 가져옴
 
-    - name: Setup Python
+    - name: 🐍 Python 설치 및 설정
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9' # 파이썬 버전 맞춰주고
+        python-version: '3.9' # Kivy 및 Buildozer가 잘 호환되는 Python 3.9 버전 (필요시 조절)
 
-    - name: Set up Java JDK
+    - name: ☕ Java JDK 설치 및 설정
       uses: actions/setup-java@v4
       with:
-        distribution: 'temurin'
-        java-version: '17' # 자바 버전도 맞춰주고
+        distribution: 'temurin' # AdoptOpenJDK 계열의 OpenJDK 배포판
+        java-version: '17' # Android 빌드에 필요한 Java 17 버전 (최신 빌드를 위해 권장)
 
-    - name: Install Buildozer # Buildozer 설치!
-      run: pip install buildozer
+    - name: ⚙️ Buildozer 설치
+      run: pip install buildozer # 빌드도저 패키지 설치
 
-    - name: Build Kivy APK # APK 빌드 명령!
-      run: |
-        buildozer android debug deploy run # 디버그 버전으로 빌드하는 명령어 (정확한건 너 buildozer.spec 봐야함)
-        # buildozer init # 이걸 미리 로컬에서 해서 buildozer.spec 파일을 만들었어야 해!
-    
-    # - name: Upload APK artifact # 이건 APK를 GitHub Actions 빌드 결과로 저장하고 싶을 때 추가하는 거야
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: android-apk
-    #     path: bin/*.apk # buildozer가 APK를 만드는 경로
+    - name: 🚀 Kivy APK 빌드 시작!
+      run: buildozer android debug # 대망의 안드로이드 APK 디버그 빌드 명령어!
+
+    - name: ⬆️ 빌드된 APK 아티팩트 업로드 (선택사항이지만 강력 권장!)
+      uses: actions/upload-artifact@v4 # 빌드된 파일을 GitHub Actions 결과물로 업로드하는 액션
+      with:
+        name: 점메추_앱_APK # 업로드될 파일의 이름
+        path: bin/*.apk # Buildozer가 APK 파일을 생성하는 기본 경로.
+                        # 빌드 후 이 경로에 APK 파일이 생길 거야!
