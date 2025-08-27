@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Final Attempt without Docker)
+name: Build Kivy Android APK (Aggressive Clean)
 
 on:
   push:
@@ -45,13 +45,11 @@ jobs:
         cd ${{ github.workspace }}
 
         # 강력한 클린업: 이전 빌드 흔적, 다운로드된 SDK/NDK, 모든 캐시 완전 삭제
-        buildozer appclean
-        buildozer distclean
+        # buildozer appclean, buildozer distclean 대신 rm -rf 로 강제 삭제
         rm -rf .buildozer  # buildozer 작업 디렉토리 강제 삭제
         rm -rf ~/.buildozer # 사용자 홈 디렉토리의 buildozer 캐시도 삭제
 
         # Android SDK/NDK 라이선스 강제 수락 (가장 중요!)
-        # sdkmanager를 직접 실행하여 라이선스에 동의 (프리뷰 버전 포함)
         mkdir -p $HOME/.android
         touch $HOME/.android/repositories.cfg # repositories.cfg 파일이 없으면 sdkmanager가 오류남
         
