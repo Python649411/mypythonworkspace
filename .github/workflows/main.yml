@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Fix Exit 127 - sdkmanager PATH)
+name: Build Kivy Android APK (Curl Retry Download)
 
 on:
   push:
@@ -67,7 +67,7 @@ jobs:
         echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> $GITHUB_ENV # Java Path
 
         # sdkmanager 설치 및 PATH 설정 (여기서 PATH에 sdkmanager가 추가됨)
-        curl -sL https://dl.google.com/android/repository/commandlinetools-linux-current.zip -o android-cmdline-tools.zip
+        curl -fL --retry 5 --retry-delay 10 https://dl.google.com/android/repository/commandlinetools-linux-current.zip -o android-cmdline-tools.zip # <--- ✨ 재시도 로직 추가됨! ✨
         unzip -q android-cmdline-tools.zip -d $HOME/cmdline-tools
         mkdir -p ${ANDROID_HOME}
         mv $HOME/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools # tools 폴더명을 그대로 유지
