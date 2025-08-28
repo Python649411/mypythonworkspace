@@ -102,7 +102,7 @@ fullscreen = 0
 
 # (int) Target Android API, should be as high as possible.
 android.api = 33
-
+ 
 # (str) Android Build Tools version
 android.build_tools = 33.0.0
 
