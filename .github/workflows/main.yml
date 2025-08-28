@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Aidl Fix - Targeted SDK Install)
+name: Build Kivy Android APK (Ultimate Aidl Fix)
 
 on:
   push:
@@ -37,7 +37,7 @@ jobs:
         
         source /etc/profile || true # 환경변수 즉시 적용
 
-    - name: Aggressive Clean and Build APK (Force specific SDK component installation)
+    - name: Aggressive Clean and Build APK (Root Fix for Aidl Issue)
       run: |
         set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
@@ -53,14 +53,18 @@ jobs:
         rm -rf ~/.buildozer
 
         # --- ✨ 강력한 Aidl/License Fix 전략 시작 ✨ ---
-        # 1. Buildozer에게 기본 Android SDK 환경을 초기화하도록 함 (sdkmanager를 설치하게 됨)
-        echo "Debugging: Initializing Buildozer Android SDK environment..."
-        buildozer android update
+        # buildozer android update 명령을 제거하여 프리뷰 빌드 툴을 가져올 기회를 없앰!
+
+        # 1. buildozer android debug 명령이 SDK를 다운로드하도록 강제 실행하여 sdkmanager를 확보
+        # 이 명령은 sdkmanager를 다운로드하고 필요한 최소 환경을 설정할 것임
+        # 하지만 apk 빌드는 아직 안될 것임 (build-tools 등을 수동으로 설정해야 하므로)
+        echo "Debugging: Triggering buildozer once to ensure SDK/sdkmanager setup..."
+        buildozer android debug --no-build # 빌드는 하지 않고 환경 설정만!
 
         # 2. Buildozer가 설치한 sdkmanager의 실제 경로를 찾아서 사용
         export ANDROID_HOME="$(find ~/.buildozer -maxdepth 4 -name 'android-sdk' | head -n 1)"
         if [ -z "$ANDROID_HOME" ]; then
-            echo "Error: ANDROID_HOME not found after buildozer update."
+            echo "Error: ANDROID_HOME not found after buildozer's initial setup."
             exit 1
         fi
         
@@ -87,7 +91,7 @@ jobs:
         echo "All critical Android SDK components are now forced installed and licenses accepted."
         # --- ✨ 강력한 Aidl/License Fix 전략 끝 ✨ ---
 
-        # 최종 APK 빌드 시도
+        # 4. 이제 모든 준비가 끝났으니, 최종 APK 빌드 시도
         buildozer android debug
 
     - name: Upload APK
