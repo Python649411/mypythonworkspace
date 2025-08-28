@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Final Buildozer Control)
+name: Build Kivy Android APK (Aidl Fix - Targeted SDK Install)
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
         distribution: 'zulu'
         java-version: '17'
 
-    - name: Set up Python (Using Python 3.9 - stable and widely compatible with Kivy/Buildozer)
+    - name: Set up Python (Using Python 3.9)
       uses: actions/setup-python@v2
       with:
         python-version: '3.9' # Python 3.9로 고정 (Kivy/Buildozer와 가장 안정적인 버전)
@@ -27,37 +27,67 @@ jobs:
     - name: Install Buildozer dependencies and Buildozer itself
       run: |
         sudo apt update
-        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen openjdk-17-jdk curl # curl은 남겨두자 (다른 의존성 있을까봐)
+        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen openjdk-17-jdk curl # curl은 혹시 몰라 남겨둠
         
         pip install --user buildozer
         pip install cython # Cython은 Kivy 컴파일에 필수
 
-        # .local/bin 경로를 PATH에 추가 (buildozer 명령어가 실행되도록)
-        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV # $HOME/.bashrc 대신 $GITHUB_ENV 사용
+        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV # .bashrc 대신 $GITHUB_ENV 사용
         echo "PATH=$PATH:$HOME/.local/bin" >> $GITHUB_ENV
         
-        # GitHub Actions 환경변수 강제 적용
-        source /etc/profile || true # profile 소싱 시도
+        source /etc/profile || true # 환경변수 즉시 적용
 
-    - name: Aggressive Clean and Build APK (Let Buildozer handle SDK entirely)
+    - name: Aggressive Clean and Build APK (Force specific SDK component installation)
       run: |
-        set -x # <--- ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
+        set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
         echo "Debugging: Step starts here."
-        echo "Debugging: Current working directory is $(pwd)" # 현재 작업 디렉토리 출력
+        echo "Debugging: Current working directory is $(pwd)"
         echo "Debugging: Contents of the GitHub workspace directory (${{ github.workspace }}):"
-        ls -la ${{ github.workspace }} # <--- ✨ GitHub workspace의 내용물을 보여줘! ✨
+        ls -la ${{ github.workspace }}
         
-        # Kivy 프로젝트 폴더로 이동 (이 폴더 안에 buildozer.spec이 있어야 함)
         cd ${{ github.workspace }}
-        echo "Debugging: Successfully changed directory to ${{ github.workspace }}" # 디버깅 메시지
+        echo "Debugging: Successfully changed directory to ${{ github.workspace }}"
 
-        # 강력한 클린업: 이전 빌드 흔적, 다운로드된 SDK/NDK, 모든 캐시 완전 삭제
-        rm -rf .buildozer  # buildozer 작업 디렉토리 강제 삭제
-        rm -rf ~/.buildozer # 사용자 홈 디렉토리의 buildozer 캐시도 삭제
+        rm -rf .buildozer
+        rm -rf ~/.buildozer
 
-        # Buildozer에게 모든 SDK/NDK 설치 및 라이선스 동의를 맡김!
-        # buildozer.spec에 지정된 build_tools 버전을 사용 (이전에 설정했으므로 여기에 직접 넣지 않음)
+        # --- ✨ 강력한 Aidl/License Fix 전략 시작 ✨ ---
+        # 1. Buildozer에게 기본 Android SDK 환경을 초기화하도록 함 (sdkmanager를 설치하게 됨)
+        echo "Debugging: Initializing Buildozer Android SDK environment..."
+        buildozer android update
+
+        # 2. Buildozer가 설치한 sdkmanager의 실제 경로를 찾아서 사용
+        export ANDROID_HOME="$(find ~/.buildozer -maxdepth 4 -name 'android-sdk' | head -n 1)"
+        if [ -z "$ANDROID_HOME" ]; then
+            echo "Error: ANDROID_HOME not found after buildozer update."
+            exit 1
+        fi
+        
+        SDKMANAGER_PATH=""
+        if [ -f "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER_PATH="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+        elif [ -f "${ANDROID_HOME}/tools/bin/sdkmanager" ]; then # 구버전 sdkmanager 경로도 고려
+            SDKMANAGER_PATH="${ANDROID_HOME}/tools/bin/sdkmanager"
+        fi
+
+        if [ -z "$SDKMANAGER_PATH" ]; then
+            echo "Error: sdkmanager not found in expected paths within Buildozer's SDK."
+            exit 1
+        fi
+        
+        echo "Debugging: Found sdkmanager at: $SDKMANAGER_PATH"
+
+        # 3. 직접 sdkmanager를 사용하여 원하는 build-tools와 platform-tools를 강제 설치하고 라이선스 동의
+        echo "Debugging: Force installing platform-tools, build-tools;33.0.0 and accepting all licenses..."
+        yes | "$SDKMANAGER_PATH" "platform-tools"
+        yes | "$SDKMANAGER_PATH" "build-tools;33.0.0" # Aidl not found 방지용!
+        yes | "$SDKMANAGER_PATH" --licenses # 나머지 모든 라이선스 동의
+
+        echo "All critical Android SDK components are now forced installed and licenses accepted."
+        # --- ✨ 강력한 Aidl/License Fix 전략 끝 ✨ ---
+
+        # 최종 APK 빌드 시도
         buildozer android debug
 
     - name: Upload APK
@@ -76,7 +106,7 @@ jobs:
             echo "Build log zipped successfully."
         else
             echo "Build log directory not found: $LOG_DIR"
-            touch build_log.zip # 디렉토리가 없으면 빈 파일 생성
+            touch build_log.zip
         fi
         
     - name: Upload Full Build Logs
