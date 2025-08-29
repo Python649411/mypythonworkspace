@@ -53,11 +53,7 @@ jobs:
         rm -rf ~/.buildozer
 
         # --- ✨ 강력한 Aidl/License Fix 전략 시작 ✨ ---
-        # buildozer android update 명령을 제거하여 프리뷰 빌드 툴을 가져올 기회를 없앰!
-
-        # 1. buildozer android debug 명령이 SDK를 다운로드하도록 강제 실행하여 sdkmanager를 확보
-        # 이 명령은 sdkmanager를 다운로드하고 필요한 최소 환경을 설정할 것임
-        # 하지만 apk 빌드는 아직 안될 것임 (build-tools 등을 수동으로 설정해야 하므로)
+        # 1. buildozer android debug --no-build 명령으로 Buildozer가 sdkmanager 환경을 만들도록 함
         echo "Debugging: Triggering buildozer once to ensure SDK/sdkmanager setup..."
         buildozer android debug --no-build # 빌드는 하지 않고 환경 설정만!
 
