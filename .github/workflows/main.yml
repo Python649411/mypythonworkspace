@@ -1,66 +1,99 @@
-name: Build Kivy Android APK (Ultimate Setup-Android Fix)
+name: Build Kivy Android APK (Absolute Env Var Control)
 
 on:
   push:
-    branches: [ master ] # master 브랜치에 코드가 푸시될 때마다 워크플로우 실행
+    branches: [ master ]
   pull_request:
-    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행
+    branches: [ master ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest # Docker 컨테이너 사용 안 함! (ContainerId 문제 해결)
-    
-    env: # ✨ 이 라인부터 추가! ✨
-      ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true' # set-env/add-path 명령 허용 (액션 동작용)
+    runs-on: ubuntu-latest # Docker 컨테이너 사용 안 함
 
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Java JDK (Java 17 for modern Android builds)
+    - name: Setup Java JDK (Java 17)
       uses: actions/setup-java@v2
       with:
         distribution: 'zulu'
         java-version: '17'
 
-    - name: Set up Python (Using Python 3.9)
+    - name: Set up Python (3.9)
       uses: actions/setup-python@v2
       with:
         python-version: '3.9'
 
-    # --- ✨ 강력한 Setup Android Action 사용! ✨ ---
-    - name: Set up Android SDK and NDK (Ultimate Fix via specialized Action)
-      uses: android-actions/setup-android@v2.0.0 # ✨ 수정된 정확한 액션 이름! ✨
-      with:
-        api-level: 30 # buildozer.spec의 android.api와 동일하게 설정
-        build-tools: 30.0.3 # buildozer.spec의 android.build_tools와 동일하게 설정
-        cmake-version: 3.10.2 # Kivy/Buildozer가 필요로 하는 CMake 버전 (일반적으로 3.10 이상)
-        ndk: r25b # Buildozer가 선호하는 NDK 버전 (안드로이드 NDK r25b)
-        install-latest-platform-tools: true # 최신 platform-tools 설치
-        
     - name: Install Buildozer dependencies
       run: |
         sudo apt update
         sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen curl
         
         pip install --user buildozer
-        pip install cython # Cython은 Kivy 컴파일에 필수
+        pip install cython
 
-        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV # Buildozer 명령어를 위해 PATH 추가
+        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
         echo "PATH=$PATH:$HOME/.local/bin" >> $GITHUB_ENV
         source /etc/profile || true # 환경변수 즉시 적용
 
-    - name: Aggressive Clean (Before Buildozer run)
+    - name: Aggressive Clean (removes previous build files)
       run: |
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
-    - name: Build Android APK (Let Buildozer use pre-set SDK)
+    - name: Configure Android SDK/NDK Environment and Build APK
       run: |
         set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
-        echo "Debugging: Starting buildozer android debug using setup-android provided SDK..."
+        echo "Debugging: Starting SDK/NDK setup and build..."
         
-        # setup-android 액션이 이미 모든 SDK/NDK를 설정했으므로, Buildozer는 이를 활용할 것임.
+        # 1. Buildozer를 한번 실행하여 SDK/NDK 기본 환경 구축
+        echo "Debugging: Running buildozer once for basic SDK setup (allow failure if needed)..."
+        buildozer android debug --no-build || true # 빌드는 하지 않고 환경 설정만. 실패해도 다음 스텝 진행.
+
+        # 2. Buildozer가 설치한 SDK 경로 탐색 및 GITHUB_ENV에 설정 (핵심!)
+        export BUILD_ANDROID_ROOT="$(find ~/.buildozer/android/platform -maxdepth 2 -name 'android-sdk' | head -n 1)"
+        if [ -z "$BUILD_ANDROID_ROOT" ]; then
+            echo "Error: Could not locate Android SDK installed by Buildozer."
+            exit 1
+        fi
+        
+        echo "ANDROID_HOME=$BUILD_ANDROID_ROOT" >> $GITHUB_ENV
+        echo "ANDROID_SDK_ROOT=$BUILD_ANDROID_ROOT" >> $GITHUB_ENV # 안드로이드 SDK 루트 경로
+        echo "PATH=$BUILD_ANDROID_ROOT/cmdline-tools/latest/bin:$BUILD_ANDROID_ROOT/platform-tools:$BUILD_ANDROID_ROOT/cmdline-tools/bin:$BUILD_ANDROID_ROOT/tools:$PATH" >> $GITHUB_ENV # SDK 경로 PATH 추가
+        echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> $GITHUB_ENV # JAVA_HOME 설정
+        echo "NDK_HOME=$(find ~/.buildozer/android/platform -maxdepth 2 -name 'android-ndk-r*' | head -n 1)" >> $GITHUB_ENV # NDK_HOME 설정
+        
+        echo "Debugging: Environment variables for SDK/NDK set via GITHUB_ENV."
+
+        # 3. `sdkmanager` 경로 확보
+        export SDKMANAGER_EXEC="$(find "$BUILD_ANDROID_ROOT" -name sdkmanager -executable | head -n 1)"
+        if [ -z "$SDKMANAGER_EXEC" ]; then
+            echo "Error: sdkmanager executable not found within Buildozer's SDK setup."
+            exit 1
+        fi
+        echo "Debugging: Found sdkmanager executable at: $SDKMANAGER_EXEC"
+
+        # 4. RC build-tools 버전 삭제 (Buildozer가 설치했다면)
+        echo "Debugging: Checking for and purging problematic RC build-tools versions..."
+        RC_BUILD_TOOLS_DIR="$BUILD_ANDROID_ROOT/build-tools"
+        if [ -d "$RC_BUILD_TOOLS_DIR" ]; then
+            for dir in "$RC_BUILD_TOOLS_DIR"/*; do
+                if [[ "$dir" == *"-rc"* ]]; then
+                    echo "Debugging: Found problematic RC build-tools: $dir. Deleting this RC version."
+                    rm -rf "$dir"
+                fi
+            done
+        fi
+
+        # 5. Build-tools 30.0.3, platform-tools 강제 설치 및 라이선스 동의
+        echo "Debugging: Force installing stable build-tools;30.0.3 and platform-tools and accepting licenses..."
+        yes | "$SDKMANAGER_EXEC" "platform-tools" "build-tools;30.0.3" --licenses || true # 라이선스 동의
+        
+        echo "All critical Android SDK components are now force installed and licenses accepted for target versions."
+
+        # 6. 최종 Buildozer 빌드 실행
+        echo "Debugging: Starting final buildozer android debug command to build the APK..."
         buildozer android debug
 
     - name: Upload APK
