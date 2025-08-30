@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Docker Strategy - Fix CD)
+name: Build Kivy Android APK (Docker Strategy - Latest Android)
 
 on:
   push:
@@ -10,48 +10,43 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: "circleci/android:api-29-node" # 이미지 유지
+      image: "macalimlim/android-build-box:latest" # <--- ✨ 최신 안드로이드 빌드 박스 이미지 사용! ✨
       options: --user root # 컨테이너 내에서 권한 문제 해결을 위해 root 권한으로 실행
-
+    
     steps:
-    - uses: actions/checkout@v2 # 여기에 path: 없음 -> 기본 경로 /github/workspace에 체크아웃됨
+    - uses: actions/checkout@v2
 
-    - name: Set up Python (Using Python 3.9) # python/setup-python 액션만 사용
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.9'
-
-    - name: Install Buildozer dependencies (inside Docker container)
+    # 컨테이너에 Python 3.9이 있을 것으로 예상되므로, setup-python 액션 대신 직접 pip 사용
+    # 단, 정확한 python3 실행 파일 경로를 사용하도록 주의
+    - name: Install Buildozer and Cython with Python 3.9
       run: |
-        # 여기서는 이미 /github/workspace가 현재 작업 디렉토리로 설정되어 있다고 가정
-        # 즉, cd /github/workspace 명령이 더 이상 필요 없음
+        # apt update 및 install 제거 (새 이미지에 포함되어 있거나 필요 없을 가능성 높음)
+        # buildozer 및 cython 설치 시 명확하게 python3 실행 파일을 지정
+        /usr/bin/python3 -m pip install --user buildozer
+        /usr/bin/python3 -m pip install --user cython
         
-        # apt update && apt install -y는 Dockerfile 단계에서 이루어지는 것이 가장 이상적
-        # 하지만 여기서 필요한 필수 패키지만 추가
-        apt update && apt install -y git zip unzip # Buildozer 필수 의존성
+        # Buildozer 명령어 사용을 위해 .local/bin 경로를 PATH에 추가
+        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+        echo "PATH=$PATH:$HOME/.local/bin" >> $GITHUB_ENV
         
-        # pip install --user buildozer 대신 buildozer 명령어 바로 실행 가능하도록
-        pip install buildozer
-        pip install cython
-
-        # GITHUB_ENV를 통해 PATH에 추가하지 않고, buildozer 실행 전에 경로를 직접 지정
-        # 이 단계에서만 유효한 PATH 설정
+        # Buildozer가 사용하는 SDK/NDK 경로 설정 (이미지 내부 경로 확인 후 조정 필요할 수 있음)
+        # macalimlim/android-build-box 이미지의 기본 SDK/NDK 경로를 가정
+        echo "ANDROID_HOME=/opt/android-sdk" >> $GITHUB_ENV
+        echo "NDK_HOME=/opt/android-ndk" >> $GITHUB_ENV
+        echo "JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64" >> $GITHUB_ENV # 이 이미지의 Java 경로
 
     - name: Aggressive Clean (Before Buildozer run)
       run: |
-        # 이 단계 역시 현재 작업 디렉토리가 /github/workspace임을 가정
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
-    - name: Build Android APK (using pre-installed SDK in Docker)
+    - name: Build Android APK
       run: |
         set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
-        echo "Debugging: Starting buildozer android debug directly using Docker environment..."
-        # 이 단계 역시 현재 작업 디렉토리가 /github/workspace임을 가정
+        echo "Debugging: Starting buildozer android debug..."
         
-        # Buildozer에게 모든 SDK/NDK 다운로드, 설치, 라이선스 동의를 맡김.
-        # 컨테이너에 SDK가 이미 있으므로, Buildozer는 기존 SDK를 활용할 것임.
+        # buildozer.spec에 명시된 android.api 및 android.build_tools 버전을 따름
         buildozer android debug
 
     - name: Upload APK
@@ -63,7 +58,6 @@ jobs:
     - name: Collect Full Build Logs (for debugging)
       if: always() # 빌드 성공/실패 여부와 상관없이 항상 로그 수집
       run: |
-        # 이 단계 역시 현재 작업 디렉토리가 /github/workspace임을 가정
         LOG_DIR=".buildozer/logs"
         if [ -d "$LOG_DIR" ]; then
             zip -r build_log.zip "$LOG_DIR"/*
