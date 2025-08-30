@@ -1,111 +1,63 @@
-name: Build Kivy Android APK (Back to ubuntu-latest with RC Purge)
+name: Build Kivy Android APK (Ultimate Setup-Android Fix)
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master ] # master 브랜치에 코드가 푸시될 때마다 워크플로우 실행
   pull_request:
-    branches: [ master ]
+    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행
 
 jobs:
   build:
-    runs-on: ubuntu-latest # Docker 컨테이너 대신 기본 ubuntu 런너 사용 (ContainerId 문제 해결)
-    # container: # ✨ 이 라인부터 Docker 컨테이너 설정 모두 삭제 ✨
-    #   image: "macalimlim/android-build-box:latest" 
-    #   options: --user root 
+    runs-on: ubuntu-latest # ✨ Docker 컨테이너 사용 안 함! (ContainerId 문제 해결) ✨
 
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Java JDK (Java 17)
+    - name: Setup Java JDK (Java 17 for modern Android builds)
       uses: actions/setup-java@v2
       with:
         distribution: 'zulu'
         java-version: '17'
 
-    - name: Set up Python (3.9)
+    - name: Set up Python (Using Python 3.9)
       uses: actions/setup-python@v2
       with:
         python-version: '3.9'
 
+    # --- ✨ 강력한 Setup Android Action 사용! ✨ ---
+    - name: Set up Android SDK and NDK (Ultimate Fix via specialized Action)
+      uses: aminomancer/setup-android@v2.0.0 # ✨ 핵심 액션! ✨
+      with:
+        api-level: 30 # buildozer.spec의 android.api와 동일하게 설정
+        build-tools: 30.0.3 # buildozer.spec의 android.build_tools와 동일하게 설정
+        cmake-version: 3.10.2 # Kivy/Buildozer가 필요로 하는 CMake 버전 (일반적으로 3.10 이상)
+        ndk: r25b # Buildozer가 선호하는 NDK 버전 (안드로이드 NDK r25b)
+        install-latest-platform-tools: true # 최신 platform-tools 설치
+        
     - name: Install Buildozer dependencies
       run: |
-        # apt update는 ubuntu-latest 런너에서 필요함
         sudo apt update
-        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen openjdk-17-jdk curl
+        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen curl
         
         pip install --user buildozer
-        pip install cython
+        pip install cython # Cython은 Kivy 컴파일에 필수
 
-        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV # Buildozer 명령어를 위해 PATH 추가
         echo "PATH=$PATH:$HOME/.local/bin" >> $GITHUB_ENV
-        source /etc/profile || true
+        source /etc/profile || true # 환경변수 즉시 적용
 
-    - name: Aggressive Clean (removes previous build files)
+    - name: Aggressive Clean (Before Buildozer run)
       run: |
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
-    - name: Build Android APK (Apply RC Purge Strategy - Re-attempt)
+    - name: Build Android APK (Let Buildozer use pre-set SDK)
       run: |
-        set -x # Debugging
+        set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
+
+        echo "Debugging: Starting buildozer android debug using setup-android provided SDK..."
         
-        echo "Debugging: Starting buildozer operations and RC Purge strategy."
-        
-        # 1. Run buildozer once to allow it to download SDK and NDK components (including potentially problematic RC versions)
-        # We allow it to fail here, as its primary goal is just to setup the SDK structure.
-        echo "Debugging: Running buildozer once to allow basic SDK/NDK setup by buildozer..."
-        buildozer android debug --no-build || true 
-
-        # 2. Locate Android SDK Home within the buildozer's setup
-        export ANDROID_HOME="$(find ~/.buildozer -maxdepth 4 -name 'android-sdk' | head -n 1)"
-        if [ -z "$ANDROID_HOME" ]; then
-            echo "Error: ANDROID_HOME not found after buildozer's initial SDK setup."
-            exit 1
-        fi
-        echo "Debugging: Detected ANDROID_HOME at: $ANDROID_HOME"
-
-        # 3. Locate the sdkmanager executable for manual control
-        SDKMANAGER_PATH=""
-        if [ -f "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
-            SDKMANAGER_PATH="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-        elif [ -f "${ANDROID_HOME}/tools/bin/sdkmanager" ]; then # Fallback for older SDK structures
-            SDKMANAGER_PATH="${ANDROID_HOME}/tools/bin/sdkmanager"
-        fi
-        if [ -z "$SDKMANAGER_PATH" ]; then
-            echo "Error: sdkmanager executable not found in expected locations within ANDROID_HOME."
-            exit 1
-        fi
-        echo "Debugging: Found sdkmanager executable at: $SDKMANAGER_PATH"
-
-        # 4. Add Android SDK/tools to PATH for current session commands (needed for sdkmanager, adb, etc.)
-        # This PATH setup is temporary for this run block.
-        export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/bin:${ANDROID_HOME}/tools/bin:$PATH"
-        echo "Debugging: Updated PATH for SDK tools: $PATH"
-
-        # 5. RC Version Purge Strategy: Delete problematic RC build-tools if they were downloaded by buildozer
-        echo "Debugging: Checking for and purging problematic RC build-tools versions if they exist..."
-        RC_BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools"
-        if [ -d "$RC_BUILD_TOOLS_DIR" ]; then
-            for dir in "$RC_BUILD_TOOLS_DIR"/*; do
-                if [[ "$dir" == *"-rc"* ]]; then
-                    echo "Debugging: Found problematic RC build-tools: $dir. Deleting this RC version."
-                    rm -rf "$dir"
-                fi
-            done
-        fi
-        echo "Debugging: RC build-tools purge complete."
-        
-        # 6. Force install specific stable build-tools (33.0.0) and platform-tools components
-        # This uses the located sdkmanager path to ensure correct components are installed.
-        echo "Debugging: Force installing stable platform-tools and build-tools;33.0.0 and accepting all licenses."
-        yes | "$SDKMANAGER_PATH" "platform-tools" || true # || true to allow continuation if a component is already installed/latest
-        yes | "$SDKMANAGER_PATH" "build-tools;33.0.0" || true
-        yes | "$SDKMANAGER_PATH" --licenses || true # Accept any remaining licenses
-        
-        echo "All critical Android SDK components are now force installed and licenses accepted for target versions."
-
-        # 7. Final buildozer android debug command to build the APK
-        echo "Debugging: Starting final buildozer android debug command to build the APK..."
+        # setup-android 액션이 이미 모든 SDK/NDK를 설정했으므로, Buildozer는 이를 활용할 것임.
         buildozer android debug
 
     - name: Upload APK
