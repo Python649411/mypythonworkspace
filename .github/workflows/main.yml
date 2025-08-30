@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Docker Strategy - CircleCI with Working Dir)
+name: Build Kivy Android APK (Docker Strategy - Final Check)
 
 on:
   push:
@@ -10,30 +10,35 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: "circleci/android:api-29-node"
-      options: --user root
+      image: "circleci/android:api-29-node" # 이미지 유지
+      options: --user root # 컨테이너 내에서 권한 문제 해결을 위해 root 권한으로 실행
     
-    defaults: # ✨ 이 라인 추가 ✨
-      run: # ✨ 이 라인 추가 ✨
-        working-directory: /home/circleci/project # ✨ 이 라인 추가: CircleCI 이미지의 기본 작업 디렉토리 ✨
+    # defaults: # ✨ 이 라인 삭제! ✨
+    #   run: # ✨ 이 라인 삭제! ✨
+    #     working-directory: /home/circleci/project # ✨ 이 라인 삭제! ✨
 
     steps:
     - uses: actions/checkout@v2
-      with: # ✨ 이 부분 추가: checkout 경로를 컨테이너의 기본 작업 디렉토리와 일치시킴 ✨
-        path: /home/circleci/project
+      # with: # ✨ 이 부분 삭제! (기본 경로로 checkout) ✨
+      #   path: /home/circleci/project # ✨ 이 부분 삭제! ✨
 
-    # Java JDK, Python은 컨테이너에 이미 설치되어 있을 가능성이 높지만, 버전을 명확히 하기 위해 설정 유지
     - name: Set up Python (Using Python 3.9)
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.9'
+      run: |
+        # GitHub Actions가 기본으로 설정하는 Python 대신 컨테이너 환경 내 Python을 사용하기 위한 재설정
+        /usr/bin/python3 -m pip install --upgrade pip setuptools wheel
+        /usr/bin/python3 -m pip install --user poetry || true # Poetry 설치 (혹시 모르니)
 
     - name: Install Buildozer dependencies (inside Docker container)
       run: |
+        # 이 단계에서 cd /github/workspace 를 먼저 수행
+        cd /github/workspace # ✨ 이 라인 추가! ✨
+        
         # 컨테이너 내에는 sudo가 필요 없을 수 있지만, 혹시 모르니 남겨둠
         # 컨테이너에는 기본적으로 대부분의 빌드 도구가 설치되어 있음
         apt update && apt install -y git zip unzip # Buildozer 필수 의존성
         
+        # pip 설치는 이미 이전 step에서 했거나, 컨테이너에 있을 수 있음.
+        # 여기서는 buildozer와 cython만 설치.
         pip install --user buildozer
         pip install cython # Cython은 Kivy 컴파일에 필수
 
@@ -51,7 +56,7 @@ jobs:
 
     - name: Aggressive Clean (Before Buildozer run)
       run: |
-        # defaults.run.working-directory가 적용되므로 cd 명령은 더 이상 필요 없음
+        cd /github/workspace # ✨ 이 라인 추가! ✨
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
@@ -60,7 +65,7 @@ jobs:
         set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
         echo "Debugging: Starting buildozer android debug directly using Docker environment..."
-        # defaults.run.working-directory가 적용되므로 cd 명령은 더 이상 필요 없음
+        cd /github/workspace # ✨ 이 라인 추가! ✨
         
         # Buildozer에게 모든 SDK/NDK 다운로드, 설치, 라이선스 동의를 맡김.
         # 컨테이너에 SDK가 이미 있으므로, Buildozer는 기존 SDK를 활용할 것임.
@@ -75,7 +80,7 @@ jobs:
     - name: Collect Full Build Logs (for debugging)
       if: always() # 빌드 성공/실패 여부와 상관없이 항상 로그 수집
       run: |
-        # defaults.run.working-directory가 적용되므로 cd 명령은 더 이상 필요 없음
+        cd /github/workspace # ✨ 이 라인 추가! ✨
         LOG_DIR=".buildozer/logs"
         if [ -d "$LOG_DIR" ]; then
             zip -r build_log.zip "$LOG_DIR"/*
