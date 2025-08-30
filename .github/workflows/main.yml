@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Remove JAVA_TOOL_OPTIONS)
+name: Build Kivy Android APK (Setup-Android v3 Upgrade)
 
 on:
   push:
@@ -10,14 +10,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env: # ACTIONS_ALLOW_UNSECURE_COMMANDS만 남겨둠
+    env: # ACTIONS_ALLOW_UNSECURE_COMMANDS가 여기에 있어야 함!
       ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true' 
-      # JAVA_TOOL_OPTIONS: "--add-modules java.xml.bind" # <--- ✨ 이 라인 삭제 또는 주석 처리! ✨
 
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Java JDK (Java 17) # Java 17 유지
+    - name: Setup Java JDK (Java 17)
       uses: actions/setup-java@v2
       with:
         distribution: 'zulu'
@@ -28,9 +27,9 @@ jobs:
       with:
         python-version: '3.9'
 
-    # ✨ 핵심: android-actions/setup-android 사용 ✨
+    # --- ✨ 핵심: android-actions/setup-android 액션 버전 v3.0.0으로 업그레이드! ✨ ---
     - name: Set up Android SDK and NDK via action
-      uses: android-actions/setup-android@v2.0.0
+      uses: android-actions/setup-android@v3.0.0 # <--- ✨ v2.0.0 -> v3.0.0으로 변경! ✨
       with:
         api-level: 30
         build-tools: 30.0.3
