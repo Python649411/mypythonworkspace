@@ -1,10 +1,10 @@
-name: Build Kivy Android APK (Ultimate Control - Forced SDK)
+name: Build Kivy Android APK (RC Purge Strategy)
 
 on:
   push:
-    branches: [ master ] # master 브랜치에 코드가 푸시될 때마다 워크플로우 실행
+    branches: [ master ]
   pull_request:
-    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행
+    branches: [ master ]
 
 jobs:
   build:
@@ -13,96 +13,86 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Java JDK (Java 17 for modern Android builds)
+    - name: Setup Java JDK (Java 17)
       uses: actions/setup-java@v2
       with:
         distribution: 'zulu'
         java-version: '17'
 
-    - name: Set up Python (Using Python 3.9)
+    - name: Set up Python (3.9)
       uses: actions/setup-python@v2
       with:
-        python-version: '3.9' # Python 3.9로 고정 (Kivy/Buildozer와 가장 안정적인 버전)
+        python-version: '3.9'
 
-    - name: Install Buildozer dependencies and prepare system tools
+    - name: Install Buildozer dependencies
       run: |
         sudo apt update
-        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen openjdk-17-jdk curl wget git-lfs # wget 추가
-        git lfs install # git-lfs 초기화
-        
+        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen openjdk-17-jdk curl
         pip install --user buildozer
-        pip install cython # Cython은 Kivy 컴파일에 필수
-
-        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV # .bashrc 대신 $GITHUB_ENV 사용
+        pip install cython
+        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
         echo "PATH=$PATH:$HOME/.local/bin" >> $GITHUB_ENV
-        
-        source /etc/profile || true # 환경변수 즉시 적용
+        source /etc/profile || true
 
-    - name: Ultimate Android SDK/NDK Preparation (No more Buildozer auto-downloads)
+    - name: Aggressive Clean
       run: |
-        set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
+        cd ${{ github.workspace }}
+        rm -rf .buildozer
+        rm -rf ~/.buildozer
 
-        echo "Debugging: Starting ultimate SDK preparation..."
-
-        # 1. Android SDK 및 NDK 설치 경로 설정 (buildozer.spec과 동일하게)
-        # buildozer.spec에 명시된 경로와 일치해야 함!
-        export ANDROID_HOME="/home/runner/.buildozer/android/platform/android-sdk"
-        export NDK_HOME="/home/runner/.buildozer/android/platform/android-ndk"
-        export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-
-        mkdir -p $HOME/.android
-        touch $HOME/.android/repositories.cfg # repositories.cfg 파일이 없으면 sdkmanager 오류
-
-        # sdk.dir 설정 (gradle이 SDK를 찾도록)
-        mkdir -p $HOME/.gradle
-        echo "sdk.dir=${ANDROID_HOME}" >> $HOME/.gradle/gradle.properties
-
-        # --- ✨ Step 1: Command-line Tools 강제 다운로드 및 설치 (sdkmanager 확보) ✨ ---
-        echo "Debugging: Downloading specific Command-line Tools (8500642_latest)..."
-        mkdir -p ${ANDROID_HOME}
-        # 이전 버전 주소 사용 (자동 다운로드 404 문제 회피)
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-8500642_latest.zip -O android-cmdline-tools.zip
-        unzip -q android-cmdline-tools.zip -d ${ANDROID_HOME}/temp_cmdline_tools # 임시 폴더에 압축 풀기
-        mv ${ANDROID_HOME}/temp_cmdline_tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools # 최종 경로로 이동
-
-        # --- ✨ Step 2: NDK 강제 다운로드 및 설치 ✨ ---
-        echo "Debugging: Downloading Android NDK (r25b)..."
-        mkdir -p ${NDK_HOME}
-        # NDK는 buildozer가 기본으로 사용하는 r25b 버전으로 직접 다운로드
-        wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip -O android-ndk-r25b-linux.zip
-        unzip -q android-ndk-r25b-linux.zip -d ${NDK_HOME}/.. # 부모 디렉토리에 압축 풀고 이동
-        mv ${NDK_HOME}/../android-ndk-r25b ${NDK_HOME} # 최종 NDK 경로로 이동
-
-        # --- ✨ Step 3: sdkmanager 사용을 위한 PATH 설정 및 필수 컴포넌트 설치 ✨ ---
-        # SDK/NDK 경로를 시스템 PATH에 추가 (sdkmanager, adb 등 사용을 위해)
-        export PATH="${ANDROID_HOME}/cmdline-tools/tools/bin:${ANDROID_HOME}/cmdline-tools/bin:${ANDROID_HOME}/platform-tools:$PATH"
-        export PATH="${NDK_HOME}:$PATH" # NDK 경로도 PATH에 추가 (혹시 필요할까봐)
+    - name: Build Android APK (with RC Purge)
+      run: |
+        set -x # Debugging
         
-        echo "Debugging: PATH is now: $PATH"
-        which sdkmanager || echo "sdkmanager might not be directly in PATH; checking..."
-        SDKMANAGER_EXEC="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" # sdkmanager 정확한 경로 확보
-        if [ ! -f "$SDKMANAGER_EXEC" ]; then # 없으면 구버전 경로 확인
-            SDKMANAGER_EXEC="${ANDROID_HOME}/cmdline-tools/tools/bin/sdkmanager"
-        fi
-        if [ ! -f "$SDKMANAGER_EXEC" ]; then
-            echo "Error: Final check failed, sdkmanager executable not found at expected path."
+        echo "Debugging: Starting main build step..."
+        cd ${{ github.workspace }}
+
+        # 1. First run of buildozer to allow it to download SDK and NDK components (including problematic RC versions)
+        echo "Debugging: Running buildozer once to ensure basic SDK setup..."
+        buildozer android debug --no-build || true # Allow it to fail but setup SDK
+
+        # 2. Locate Android SDK Home
+        export ANDROID_HOME="$(find ~/.buildozer -maxdepth 4 -name 'android-sdk' | head -n 1)"
+        if [ -z "$ANDROID_HOME" ]; then
+            echo "Error: ANDROID_HOME not found after buildozer likely failed SDK setup."
             exit 1
         fi
-        echo "Debugging: sdkmanager executable found at: $SDKMANAGER_EXEC"
-
-        # 필수 컴포넌트(platform-tools, build-tools;33.0.0) 강제 설치 및 라이선스 동의
-        echo "Debugging: Force installing platform-tools, build-tools;33.0.0 and accepting all licenses using $SDKMANAGER_EXEC..."
-        yes | "$SDKMANAGER_EXEC" "platform-tools" "build-tools;33.0.0" # Aidl not found 방지용!
-        yes | "$SDKMANAGER_EXEC" --licenses # 나머지 모든 라이선스 동의
-
-        echo "All critical Android SDK/NDK components are now force installed and licenses accepted."
-
-    - name: Build Android APK (Final Call to Buildozer)
-      run: |
-        set -x # 모든 명령어 실행 전 출력 (디버깅용) ✨
-        cd ${{ github.workspace }}
-        # buildozer clean 명령 제거 (수동으로 디렉토리를 지웠으므로)
-        # buildozer android debug 명령만 실행하여 APK 생성 (이제 SDK/NDK는 Buildozer가 건드릴 필요 없음)
+        
+        # 3. Add sdkmanager to PATH for manual control
+        SDKMANAGER_PATH=""
+        if [ -f "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER_PATH="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+        elif [ -f "${ANDROID_HOME}/tools/bin/sdkmanager" ]; then
+            SDKMANAGER_PATH="${ANDROID_HOME}/tools/bin/sdkmanager"
+        fi
+        if [ -z "$SDKMANAGER_PATH" ]; then
+            echo "Error: sdkmanager executable not found."
+            exit 1
+        fi
+        export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/bin:${ANDROID_HOME}/tools/bin:$PATH"
+        
+        echo "Debugging: SDK Manager path is: $SDKMANAGER_PATH"
+        
+        # 4. RC Version Purge Strategy: Delete problematic RC build-tools if they exist
+        echo "Debugging: Checking for and purging problematic RC build-tools versions..."
+        RC_BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools"
+        if [ -d "$RC_BUILD_TOOLS_DIR" ]; then
+            for dir in "$RC_BUILD_TOOLS_DIR"/*; do
+                if [[ "$dir" == *"-rc"* ]]; then
+                    echo "Debugging: Found problematic RC build-tools: $dir. Deleting..."
+                    rm -rf "$dir"
+                fi
+            done
+        fi
+        
+        # 5. Force install specific stable build-tools (33.0.0) and platform-tools
+        echo "Debugging: Force installing stable build-tools;33.0.0 and platform-tools and accepting licenses..."
+        yes | "$SDKMANAGER_PATH" "platform-tools" || true
+        yes | "$SDKMANAGER_PATH" "build-tools;33.0.0" || true
+        yes | "$SDKMANAGER_PATH" --licenses || true # Accept any remaining licenses
+        
+        # 6. Final buildozer android debug command
+        echo "Debugging: Starting final buildozer android debug..."
         buildozer android debug
 
     - name: Upload APK
@@ -112,7 +102,7 @@ jobs:
         path: bin/*.apk
         
     - name: Collect Full Build Logs (for debugging)
-      if: always() # 빌드 성공/실패 여부와 상관없이 항상 로그 수집
+      if: always()
       run: |
         cd ${{ github.workspace }}
         LOG_DIR=".buildozer/logs"
