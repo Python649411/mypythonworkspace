@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (SDK Symlink Hijack)
+name: Build Kivy Android APK (Java 11 Golden Zone Fix)
 
 on:
   push:
@@ -16,11 +16,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Java JDK (Java 17)
+    - name: Setup Java JDK (Java 11 - Golden Zone) # ✨ Java 17 -> Java 11로 변경! ✨
       uses: actions/setup-java@v2
       with:
         distribution: 'zulu'
-        java-version: '17'
+        java-version: '11' # <--- ✨ 이 라인을 11로 바꿔줘! ✨
 
     - name: Set up Python (3.9)
       uses: actions/setup-python@v2
@@ -54,17 +54,11 @@ jobs:
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
-    - name: Symlink Installed SDK/NDK to Buildozer's Path # ✨ 핵심: SDK/NDK 심볼릭 링크 주입 ✨
+    - name: Symlink Installed SDK/NDK to Buildozer's Path
       run: |
-        # Buildozer가 SDK/NDK를 찾는 경로에 우리가 설치한 SDK/NDK를 링크
-        # /home/runner/.buildozer/android/platform/android-sdk 경로가 없으면 에러가 날 수 있으니
-        # mkdir -p 로 미리 생성해 둠.
-        mkdir -p ~/.buildozer/android/platform/ # android-sdk 및 android-ndk 심링크를 위한 상위 폴더 생성
-
-        # 심볼릭 링크 생성 (원본은 /usr/local/lib/android/sdk, 대상은 ~/.buildozer/android/platform/android-sdk)
+        mkdir -p ~/.buildozer/android/platform/ 
         ln -s /usr/local/lib/android/sdk ~/.buildozer/android/platform/android-sdk
         ln -s /usr/local/lib/android/ndk ~/.buildozer/android/platform/android-ndk
-        
         echo "Debugging: Created symlinks for SDK and NDK into Buildozer's default path."
 
     - name: Build Android APK (Buildozer should now find SDK via symlink)
@@ -91,7 +85,7 @@ jobs:
         else
             echo "Build log directory not found: $LOG_DIR"
             touch build_log.zip
-        fi
+        fi # <--- ✨ 여기가 'fi'인지 확인! ✨
         
     - name: Upload Full Build Logs
       if: always()
