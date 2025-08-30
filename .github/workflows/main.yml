@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Java 17 + JAXB Fix)
+name: Build Kivy Android APK (Remove JAVA_TOOL_OPTIONS)
 
 on:
   push:
@@ -10,18 +10,18 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    env: # ✨ 이 라인부터 추가! ✨
-      ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true' # set-env/add-path 명령 허용 (액션 동작용)
-      JAVA_TOOL_OPTIONS: "--add-modules java.xml.bind" # ✨ 핵심: JAXB 모듈 강제 추가! ✨
+    env: # ACTIONS_ALLOW_UNSECURE_COMMANDS만 남겨둠
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true' 
+      # JAVA_TOOL_OPTIONS: "--add-modules java.xml.bind" # <--- ✨ 이 라인 삭제 또는 주석 처리! ✨
 
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Java JDK (Java 17) # ✨ Java 17 유지! ✨
+    - name: Setup Java JDK (Java 17) # Java 17 유지
       uses: actions/setup-java@v2
       with:
         distribution: 'zulu'
-        java-version: '17' # <--- ✨ 이 라인이 17인지 확인! ✨
+        java-version: '17'
 
     - name: Set up Python (3.9)
       uses: actions/setup-python@v2
@@ -61,7 +61,6 @@ jobs:
 
         echo "Debugging: Starting buildozer android debug using android-actions/setup-android provided SDK..."
         
-        # ReactiveCircus/android-setup-action 액션이 이미 모든 SDK/NDK를 설정했으므로, Buildozer는 이를 활용할 것임.
         buildozer android debug
 
     - name: Upload APK
