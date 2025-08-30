@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (P4A_BUILD_TOOLS_VERSION Control)
+name: Build Kivy Android APK (P4A Licenses Injection)
 
 on:
   push:
@@ -54,20 +54,31 @@ jobs:
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
-    - name: Build Android APK (Explicit P4A_BUILD_TOOLS_VERSION)
+    - name: Inject Android SDK Licenses to Buildozer's expected path # ✨ 핵심: 라이선스 파일 직접 주입 ✨
+      run: |
+        echo "Debugging: Injecting Android SDK licenses to Buildozer's expected path."
+        mkdir -p ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses
+        # 필요한 모든 라이선스 동의 내용을 직접 파일로 생성
+        echo "8933cc4baf7f848b8109f2561da75adeb978bb2a" > ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/android-sdk-license
+        echo "84845ad39e2d6cf441f650216b5a363799d63a5f" >> ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/android-sdk-preview-license
+        echo "83363b9a584c24379cc866b6c006b5093556d81a" >> ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/android-sdk-licenses
+        echo "33703517cde4b32bc71901d81fde45366c3b6f2e" >> ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/google-gdk-license
+        echo "d11ac4753c162657e17441544a49ed5f784e68e1" >> ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/android-googletv-license
+        echo "d56f5187479451eabf01ebe78b67e0e84b9df09c" >> ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/android-wear-sdk-license
+        echo "a876d75c960c1d636371c11065500e572049d594" >> ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/mips-license
+        echo "746f3458ae586b510bd5ef69742118a1" >> ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/google-source-license
+        echo "827e71396b2708b4b74f3ab623057e108e6b12a5" >> ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/intel-android-sysimage-license
+        echo "258a1ccf074d008c2a969f66858e804f" >> ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/licenses/android-sdk-preview-license
+        
+        echo "Debugging: Android SDK licenses injected."
+
+    - name: Build Android APK (Let Buildozer use pre-set SDK)
       run: |
         set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
-        echo "Debugging: Starting buildozer android debug with P4A_BUILD_TOOLS_VERSION."
+        echo "Debugging: Starting buildozer android debug using android-actions/setup-android provided SDK..."
         
-        # P4A_BUILD_TOOLS_VERSION 환경 변수를 설정하여 P4A에게 특정 빌드 툴을 사용하도록 강제
-        export P4A_BUILD_TOOLS_VERSION=30.0.3 # <--- ✨ 이 라인 추가! ✨
-
-        # ANDROID_HOME 및 ANDROID_SDK_ROOT 환경 변수를 setup-android 액션이 설치한 경로로 명시적 설정
-        # (setup-android 액션이 이를 이미 설정하지만, 명시적으로 다시 한번 설정하여 확실하게 함)
-        export ANDROID_HOME=/usr/local/lib/android/sdk # <--- ✨ 이 라인 추가! ✨
-        export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk # <--- ✨ 이 라인 추가! ✨
-
+        # Buildozer가 스스로 SDK를 찾아 빌드할 것임. 라이선스 파일 주입으로 Aidl 문제 해결 기대.
         buildozer android debug
 
     - name: Upload APK
