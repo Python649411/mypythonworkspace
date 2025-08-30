@@ -101,10 +101,10 @@ fullscreen = 0
 #android.features = android.hardware.usb.host
 
 # (int) Target Android API, should be as high as possible.
-android.api = 30
+android.api = 28
  
 # (str) Android Build Tools version
-android.build_tools = 30.0.3
+android.build_tools = 28.0.3
 
 # (int) Minimum API your APK / AAB will support.
 #android.minapi = 21
@@ -122,10 +122,10 @@ android.build_tools = 30.0.3
 #android.private_storage = True
 
 # (str) Android NDK directory (if empty, it will be automatically downloaded.)
-android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk
+#android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk
 
 # (str) Android SDK directory (if empty, it will be automatically downloaded.)
-android.sdk_path = /usr/local/lib/android/sdk
+#android.sdk_path = /usr/local/lib/android/sdk
 
 # (str) ANT directory (if empty, it will be automatically downloaded.)
 #android.ant_path =
