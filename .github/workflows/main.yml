@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Ultimate ReactiveCircus Fix)
+name: Build Kivy Android APK (Back to android-actions Setup)
 
 on:
   push:
@@ -8,7 +8,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # Docker 컨테이너 사용 안 함
+    runs-on: ubuntu-latest # Docker 컨테이너 사용 안 함!
+    
+    env: # ✨ ACTIONS_ALLOW_UNSECURE_COMMANDS가 이 위치에 있는지 다시 확인! ✨
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true' # set-env/add-path 명령 허용
 
     steps:
     - uses: actions/checkout@v2
@@ -24,14 +27,15 @@ jobs:
       with:
         python-version: '3.9'
 
-    # --- ✨ 강력한 ReactiveCircus/android-setup-action 사용! ✨ ---
-    - name: Set up Android SDK and NDK (Ultimate Fix via specialized Action)
-      uses: ReactiveCircus/android-setup-action@v2 # ✨ 핵심 액션! ✨
+    # --- ✨ android-actions/setup-android 액션으로 돌아가기! ✨ ---
+    - name: Set up Android SDK and NDK (via android-actions/setup-android)
+      uses: android-actions/setup-android@v2.0.0 # <--- ✨ 이 액션으로 다시 돌아가기! ✨
       with:
         api-level: 30 # buildozer.spec의 android.api와 동일하게 설정
         build-tools: 30.0.3 # buildozer.spec의 android.build_tools와 동일하게 설정
-        ndk: r25b # Buildozer가 선호하는 NDK 버전 (안드로이드 NDK r25b)
         cmake-version: 3.10.2 # Kivy/Buildozer가 필요로 하는 CMake 버전 (일반적으로 3.10 이상)
+        ndk: r25b # Buildozer가 선호하는 NDK 버전 (안드로이드 NDK r25b)
+        install-latest-platform-tools: true # 최신 platform-tools 설치
         
     - name: Install Buildozer dependencies
       run: |
@@ -54,9 +58,9 @@ jobs:
       run: |
         set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
-        echo "Debugging: Starting buildozer android debug using ReactiveCircus/android-setup-action provided SDK..."
+        echo "Debugging: Starting buildozer android debug using android-actions/setup-android provided SDK..."
         
-        # ReactiveCircus/android-setup-action 액션이 이미 모든 SDK/NDK를 설정했으므로, Buildozer는 이를 활용할 것임.
+        # 액션이 모든 SDK/NDK를 설정했으므로, Buildozer는 이를 활용할 것임.
         buildozer android debug
 
     - name: Upload APK
