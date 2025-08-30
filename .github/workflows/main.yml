@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # ✨ Docker 컨테이너 사용 안 함! (ContainerId 문제 해결) ✨
+    runs-on: ubuntu-latest # Docker 컨테이너 사용 안 함! (ContainerId 문제 해결)
 
     steps:
     - uses: actions/checkout@v2
@@ -26,7 +26,7 @@ jobs:
 
     # --- ✨ 강력한 Setup Android Action 사용! ✨ ---
     - name: Set up Android SDK and NDK (Ultimate Fix via specialized Action)
-      uses: aminomancer/setup-android@v2.0.0 # ✨ 핵심 액션! ✨
+      uses: android-actions/setup-android@v2.0.0 # <--- ✨ 수정된 정확한 액션 이름! ✨
       with:
         api-level: 30 # buildozer.spec의 android.api와 동일하게 설정
         build-tools: 30.0.3 # buildozer.spec의 android.build_tools와 동일하게 설정
