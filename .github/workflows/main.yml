@@ -1,38 +1,51 @@
-name: Build Kivy Android APK (Ultimate Regression to Stable Versions)
+name: Build Kivy Android APK (SDK Symlink Hijack)
 
 on:
   push:
-    branches: [ master ] # master 브랜치에 코드가 푸시될 때마다 워크플로우 실행
+    branches: [ master ]
   pull_request:
-    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행
+    branches: [ master ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest # 가장 기본적인 Ubuntu 런너 사용
+    runs-on: ubuntu-latest
+
+    env: # ACTIONS_ALLOW_UNSECURE_COMMANDS가 여기에 있어야 함!
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true' 
 
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Java JDK (Java 8 for SDK compatibility) # ✨ Java 8 사용! ✨
+    - name: Setup Java JDK (Java 17)
       uses: actions/setup-java@v2
       with:
         distribution: 'zulu'
-        java-version: '8' # <--- ✨ 이 라인을 8로 바꿔줘! ✨
+        java-version: '17'
 
-    - name: Set up Python (Python 3.8 as requested) # ✨ Python 3.8 사용! ✨
+    - name: Set up Python (3.9)
       uses: actions/setup-python@v2
       with:
-        python-version: '3.8' # <--- ✨ 이 라인을 3.8로 바꿔줘! ✨
+        python-version: '3.9'
+
+    # ✨ 핵심: android-actions/setup-android 사용 ✨
+    - name: Set up Android SDK and NDK via action
+      uses: android-actions/setup-android@v3.0.0
+      with:
+        api-level: 30
+        build-tools: 30.0.3
+        ndk: r25b # NDK도 이 액션으로 깔아주고 심링크 걸자
+        cmake-version: 3.10.2
+        install-latest-platform-tools: true 
 
     - name: Install Buildozer dependencies
       run: |
         sudo apt update
-        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen curl # 최소한의 의존성만 설치
+        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen curl
         
         pip install --user buildozer
-        pip install cython # Cython은 Kivy 컴파일에 필수
+        pip install cython
 
-        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV # Buildozer 명령어를 위해 PATH 추가
+        echo "export PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
         echo "PATH=$PATH:$HOME/.local/bin" >> $GITHUB_ENV
         source /etc/profile || true # 환경변수 즉시 적용
 
@@ -41,14 +54,25 @@ jobs:
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
-    - name: Build Android APK (Let Buildozer handle all SDK with API 28)
+    - name: Symlink Installed SDK/NDK to Buildozer's Path # ✨ 핵심: SDK/NDK 심볼릭 링크 주입 ✨
+      run: |
+        # Buildozer가 SDK/NDK를 찾는 경로에 우리가 설치한 SDK/NDK를 링크
+        # /home/runner/.buildozer/android/platform/android-sdk 경로가 없으면 에러가 날 수 있으니
+        # mkdir -p 로 미리 생성해 둠.
+        mkdir -p ~/.buildozer/android/platform/ # android-sdk 및 android-ndk 심링크를 위한 상위 폴더 생성
+
+        # 심볼릭 링크 생성 (원본은 /usr/local/lib/android/sdk, 대상은 ~/.buildozer/android/platform/android-sdk)
+        ln -s /usr/local/lib/android/sdk ~/.buildozer/android/platform/android-sdk
+        ln -s /usr/local/lib/android/ndk ~/.buildozer/android/platform/android-ndk
+        
+        echo "Debugging: Created symlinks for SDK and NDK into Buildozer's default path."
+
+    - name: Build Android APK (Buildozer should now find SDK via symlink)
       run: |
         set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
-        echo "Debugging: Starting buildozer android debug with API 28 target and Python 3.8..."
+        echo "Debugging: Starting buildozer android debug. Buildozer should use symlinked SDK."
         
-        # Buildozer에게 모든 SDK/NDK 다운로드, 설치, 라이선스 동의를 맡김.
-        # buildozer.spec에 설정된 android.api=28 및 android.build_tools=28.0.3을 따르도록 기대함.
         buildozer android debug
 
     - name: Upload APK
@@ -67,7 +91,7 @@ jobs:
         else
             echo "Build log directory not found: $LOG_DIR"
             touch build_log.zip
-        fi # <--- ✨ 여기가 'fi'인지 확인! ✨
+        fi
         
     - name: Upload Full Build Logs
       if: always()
