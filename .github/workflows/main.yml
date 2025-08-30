@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (JAXB - Cmdline Tools 6.0 + Java 11)
+name: Build Kivy Android APK (Full Manual SDK Setup - Java 8 Focus)
 
 on:
   push:
@@ -10,38 +10,33 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # `set-env`/`add-path`를 쓰지 않고, `~/.local/bin`이나 환경 변수를 직접 조작하므로
+    # `ACTIONS_ALLOW_UNSECURE_COMMANDS`는 필요 없을 가능성이 높음.
+    # 하지만 혹시 모르니 남겨두거나 완전히 제거해도 됨.
     env:
       ACTIONS_ALLOW_UNSECURE_COMMANDS: 'true' 
 
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Java JDK (Java 11 - Golden Zone) # ✨ Java 11로 고정! ✨
+    - name: Setup Java JDK (Java 8 for SDK compatibility - Final Attempt for JAXB) # ✨ Java 8로 고정! ✨
       uses: actions/setup-java@v2
       with:
         distribution: 'zulu'
-        java-version: '11' # <--- ✨ 이 라인을 11로 바꿔줘! ✨
+        java-version: '8' # <--- ✨ 이 라인을 8로 바꿔줘! ✨
 
-    - name: Set up Python (3.9) # 파이썬 3.9 유지!
+    - name: Set up Python (3.9)
       uses: actions/setup-python@v2
       with:
         python-version: '3.9'
 
-    # ✨ 핵심: android-actions/setup-android 사용 + cmdline-tools;6.0 강제 설치 ✨
-    - name: Set up Android SDK and NDK via action
-      uses: android-actions/setup-android@v3.0.0
-      with:
-        api-level: 30
-        build-tools: 30.0.3
-        ndk: r25b # NDK도 이 액션으로 깔아주고 심링크 걸자
-        cmake-version: 3.10.2
-        install-latest-platform-tools: true
-        cmdline-tools: 6.0 # <--- ✨ 이 라인 추가! (sdkmanager 포함된 cmdline-tools;6.0 강제 설치) ✨
-
-    - name: Install Buildozer dependencies
+    # ✨ `android-actions/setup-android` 액션 완전히 제거! 우리가 모든 것을 수동으로! ✨
+    
+    - name: Install Buildozer dependencies and prepare SDK environment
       run: |
         sudo apt update
-        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen curl
+        # Buildozer 필수 의존성 외에 wget도 추가 (수동 다운로드용)
+        sudo apt install -y git zip unzip python3-pip build-essential autoconf libtool screen openjdk-8-jdk curl wget
         
         pip install --user buildozer
         pip install cython
@@ -50,26 +45,61 @@ jobs:
         echo "PATH=$PATH:$HOME/.local/bin" >> $GITHUB_ENV
         source /etc/profile || true # 환경변수 즉시 적용
 
-    - name: Aggressive Clean (Before Buildozer run)
+    - name: Aggressive Clean (Before SDK/NDK preparation)
       run: |
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
-    - name: Build Android APK (Explicit P4A_BUILD_TOOLS_VERSION)
+    - name: Prepare Android SDK and NDK (Full Manual Control for Java 8 compatibility)
       run: |
         set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
-        echo "Debugging: Starting buildozer android debug with explicit P4A_BUILD_TOOLS_VERSION."
+        echo "Debugging: Starting full manual SDK preparation for Java 8 compatibility."
+
+        # Buildozer가 사용하는 경로로 SDK/NDK 설정
+        export ANDROID_HOME="${{ github.workspace }}/.buildozer/android/platform/android-sdk"
+        export NDK_HOME="${{ github.workspace }}/.buildozer/android/platform/android-ndk"
         
-        # P4A_BUILD_TOOLS_VERSION 환경 변수를 설정하여 P4A에게 특정 빌드 툴을 사용하도록 강제
-        export P4A_BUILD_TOOLS_VERSION=30.0.3 # <--- ✨ 이 라인 추가! ✨
+        mkdir -p $HOME/.android
+        touch $HOME/.android/repositories.cfg # repositories.cfg 파일이 없으면 sdkmanager 오류
 
-        # setup-android 액션이 SDK를 /usr/local/lib/android/sdk에 설치했으므로,
-        # ANDROID_HOME 및 ANDROID_SDK_ROOT 환경 변수를 이 경로로 명시적 설정
-        # (setup-android 액션이 이를 이미 설정하지만, 명시적으로 다시 한번 설정하여 확실하게 함)
-        export ANDROID_HOME=/usr/local/lib/android/sdk # <--- ✨ 이 라인 추가! ✨
-        export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk # <--- ✨ 이 라인 추가! ✨
+        # sdk.dir 설정 (gradle이 SDK를 찾도록)
+        mkdir -p $HOME/.gradle
+        echo "sdk.dir=${ANDROID_HOME}" >> $HOME/.gradle/gradle.properties
 
+        # 1. 특정 Command-line Tools 다운로드 및 설치 (sdkmanager 포함)
+        echo "Debugging: Downloading Command-line Tools..."
+        # 8583921_latest.zip: 현재까지 GitHub Actions 환경에서 가장 안정적으로 다운로드되고,
+        # Java 8 (혹은 11)과 잘 호환되는 것으로 알려진 cmdline-tools 버전.
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-8583921_latest.zip -O android-cmdline-tools.zip # ✨ 이 주소로 변경! ✨
+        unzip -q android-cmdline-tools.zip -d $HOME/cmdline-tools_temp
+        mkdir -p ${ANDROID_HOME}
+        mv $HOME/cmdline-tools_temp/cmdline-tools ${ANDROID_HOME}/cmdline-tools # tools 폴더명을 그대로 유지
+
+        # 2. Android NDK (r17c) 다운로드 및 설치 - API 28과 호환되는 NDK
+        echo "Debugging: Downloading Android NDK (r17c - for API 28)..."
+        # API 28과 잘 호환되는 NDK r17c
+        wget -q https://dl.google.com/android/repository/android-ndk-r17c-linux-x86_64.zip -O android-ndk-r17c-linux.zip
+        unzip -q android-ndk-r17c-linux.zip -d ${NDK_HOME}/.. # 부모 디렉토리에 압축 풀고 이동
+        mv ${NDK_HOME}/../android-ndk-r17c ${NDK_HOME}
+
+        # 3. SDK/NDK 경로를 시스템 PATH에 추가 (sdkmanager, adb 등 사용을 위해)
+        export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/cmdline-tools/bin:${ANDROID_HOME}/platform-tools:${NDK_HOME}:$PATH" # ✨ cmdline-tools/latest 추가! ✨
+        
+        echo "Debugging: PATH is now: $PATH"
+        
+        # 4. 필수 컴포넌트(platform-tools, build-tools;28.0.3) 강제 설치 및 라이선스 동의
+        echo "Debugging: Force installing platform-tools and build-tools;28.0.3 and accepting all licenses..."
+        yes | sdkmanager "platform-tools" "build-tools;28.0.3" --licenses
+        
+        echo "All critical Android SDK components are now force installed and licenses accepted."
+
+    - name: Build Android APK (Use fully prepared SDK)
+      run: |
+        set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
+
+        echo "Debugging: Starting buildozer android debug using fully prepared SDK."
+        
         buildozer android debug
 
     - name: Upload APK
@@ -88,7 +118,7 @@ jobs:
         else
             echo "Build log directory not found: $LOG_DIR"
             touch build_log.zip
-        fi # <--- ✨ 여기가 'fi'인지 확인! ✨
+        fi
         
     - name: Upload Full Build Logs
       if: always()
