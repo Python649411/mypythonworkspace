@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Docker Strategy)
+name: Build Kivy Android APK (Docker Strategy - CircleCI)
 
 on:
   push:
@@ -9,15 +9,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest # Docker 컨테이너를 사용해도 여전히 호스트 OS가 필요
-    container: # ✨ 이 라인부터 Docker 컨테이너 설정 시작 ✨
-      image: "androidsdk/android-build-box:latest" # 안드로이드 SDK가 미리 설치된 컨테이너 이미지 사용
+    container: # ✨ Docker 컨테이너 설정 ✨
+      image: "circleci/android:api-29-node" # <--- ✨ 이미지 변경! (ContainerId 오류 해결 시도) ✨
       options: --user root # 컨테이너 내에서 권한 문제 해결을 위해 root 권한으로 실행
 
     steps:
     - uses: actions/checkout@v2
 
-    # Java JDK는 이미 컨테이너에 포함되어 있을 가능성이 높으므로 별도 설치 필요 없음
-    # Python도 컨테이너에 이미 설치되어 있을 가능성이 높지만, 버전을 명확히 하기 위해 한번 더 설정
+    # Java JDK, Python은 컨테이너에 이미 설치되어 있을 가능성이 높지만, 버전을 명확히 하기 위해 설정 유지
     - name: Set up Python (Using Python 3.9)
       uses: actions/setup-python@v2
       with:
@@ -27,7 +26,6 @@ jobs:
       run: |
         # 컨테이너 내에는 sudo가 필요 없을 수 있지만, 혹시 모르니 남겨둠
         # 컨테이너에는 기본적으로 대부분의 빌드 도구가 설치되어 있음
-        # apt update는 컨테이너 이미지 버전에 따라 필요 없을 수도, 필요할 수도
         apt update && apt install -y git zip unzip # Buildozer 필수 의존성
         
         pip install --user buildozer
@@ -40,8 +38,8 @@ jobs:
         # Buildozer가 사용하는 경로로 SDK/NDK 심볼릭 링크 설정 (선택 사항이지만 안전을 위해)
         # 컨테이너 이미지에 따라 ANDROID_HOME 및 NDK_HOME은 이미 설정되어 있을 수 있음
         # 혹시 모르니 빌드 환경 변수들을 재설정
-        echo "ANDROID_HOME=/opt/android-sdk" >> $GITHUB_ENV # 컨테이너 내 SDK 경로
-        echo "NDK_HOME=/opt/android-ndk" >> $GITHUB_ENV # 컨테이너 내 NDK 경로
+        echo "ANDROID_HOME=/opt/android/sdk" >> $GITHUB_ENV # CircleCI 이미지 내 SDK 경로 (이미지마다 다름)
+        echo "NDK_HOME=/opt/android/ndk" >> $GITHUB_ENV # CircleCI 이미지 내 NDK 경로
         echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> $GITHUB_ENV
 
 
