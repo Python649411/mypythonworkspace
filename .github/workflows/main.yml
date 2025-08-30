@@ -1,4 +1,4 @@
-name: Build Kivy Android APK (Ultimate Stable Version Fix)
+name: Build Kivy Android APK (P4A_BUILD_TOOLS_VERSION Control)
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Java JDK (Java 17) # Java 17 유지
+    - name: Setup Java JDK (Java 17)
       uses: actions/setup-java@v2
       with:
         distribution: 'zulu'
@@ -27,12 +27,12 @@ jobs:
       with:
         python-version: '3.9'
 
-    # ✨ 핵심: android-actions/setup-android 사용 (API 28, Build-Tools 28.0.3) ✨
+    # ✨ 핵심: android-actions/setup-android 사용 (API 30, Build-Tools 30.0.3) ✨
     - name: Set up Android SDK and NDK via action
-      uses: android-actions/setup-android@v3.0.0 # v3.0.0 유지!
+      uses: android-actions/setup-android@v3.0.0
       with:
-        api-level: 28 # <--- ✨ 30 -> 28로 변경! ✨
-        build-tools: 28.0.3 # <--- ✨ 30.0.3 -> 28.0.3으로 변경! ✨
+        api-level: 30
+        build-tools: 30.0.3
         # ndk: r25b # 이 라인은 삭제되었거나 주석 처리되어 있어야 함!
         cmake-version: 3.10.2
         install-latest-platform-tools: true 
@@ -54,12 +54,20 @@ jobs:
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
-    - name: Build Android APK (Let Buildozer use pre-set SDK)
+    - name: Build Android APK (Explicit P4A_BUILD_TOOLS_VERSION)
       run: |
         set -x # ✨ 모든 명령어 실행 전 출력 (디버깅용) ✨
 
-        echo "Debugging: Starting buildozer android debug using android-actions/setup-android provided SDK..."
+        echo "Debugging: Starting buildozer android debug with P4A_BUILD_TOOLS_VERSION."
         
+        # P4A_BUILD_TOOLS_VERSION 환경 변수를 설정하여 P4A에게 특정 빌드 툴을 사용하도록 강제
+        export P4A_BUILD_TOOLS_VERSION=30.0.3 # <--- ✨ 이 라인 추가! ✨
+
+        # ANDROID_HOME 및 ANDROID_SDK_ROOT 환경 변수를 setup-android 액션이 설치한 경로로 명시적 설정
+        # (setup-android 액션이 이를 이미 설정하지만, 명시적으로 다시 한번 설정하여 확실하게 함)
+        export ANDROID_HOME=/usr/local/lib/android/sdk # <--- ✨ 이 라인 추가! ✨
+        export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk # <--- ✨ 이 라인 추가! ✨
+
         buildozer android debug
 
     - name: Upload APK
