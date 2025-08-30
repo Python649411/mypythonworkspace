@@ -122,10 +122,10 @@ android.build_tools = 30.0.3
 #android.private_storage = True
 
 # (str) Android NDK directory (if empty, it will be automatically downloaded.)
-#android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk
+android.ndk_path = /usr/local/lib/android/ndk
 
 # (str) Android SDK directory (if empty, it will be automatically downloaded.)
-#android.sdk_path = /home/runner/.buildozer/android/platform/android-sdk
+android.sdk_path = /usr/local/lib/android/sdk
 
 # (str) ANT directory (if empty, it will be automatically downloaded.)
 #android.ant_path =
