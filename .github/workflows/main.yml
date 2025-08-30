@@ -1,10 +1,10 @@
-name: Build Kivy Android APK (RC Purge Strategy)
+name: Build Kivy Android APK (Final Strategy with RC Purge)
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master ] # master 브랜치에 코드가 푸시될 때마다 워크플로우 실행
   pull_request:
-    branches: [ master ]
+    branches: [ master ] # master 브랜치로 풀 리퀘스트가 들어올 때 워크플로우 실행
 
 jobs:
   build:
@@ -34,65 +34,75 @@ jobs:
         echo "PATH=$PATH:$HOME/.local/bin" >> $GITHUB_ENV
         source /etc/profile || true
 
-    - name: Aggressive Clean
+    - name: Aggressive Clean (removes previous build files)
       run: |
         cd ${{ github.workspace }}
         rm -rf .buildozer
         rm -rf ~/.buildozer
 
-    - name: Build Android APK (with RC Purge)
+    - name: Build Android APK (Apply RC Purge Strategy)
       run: |
         set -x # Debugging
         
-        echo "Debugging: Starting main build step..."
+        echo "Debugging: Starting buildozer operations and RC Purge strategy."
         cd ${{ github.workspace }}
 
-        # 1. First run of buildozer to allow it to download SDK and NDK components (including problematic RC versions)
-        echo "Debugging: Running buildozer once to ensure basic SDK setup..."
-        buildozer android debug --no-build || true # Allow it to fail but setup SDK
+        # 1. Run buildozer once to allow it to download SDK and NDK components (including potentially problematic RC versions)
+        # We allow it to fail here, as its primary goal is just to setup the SDK structure.
+        echo "Debugging: Running buildozer once to allow basic SDK/NDK setup by buildozer..."
+        buildozer android debug --no-build || true 
 
-        # 2. Locate Android SDK Home
+        # 2. Locate Android SDK Home within the buildozer's setup
+        # This is crucial because buildozer might put SDK in a specific path within ~/.buildozer
         export ANDROID_HOME="$(find ~/.buildozer -maxdepth 4 -name 'android-sdk' | head -n 1)"
         if [ -z "$ANDROID_HOME" ]; then
-            echo "Error: ANDROID_HOME not found after buildozer likely failed SDK setup."
+            echo "Error: ANDROID_HOME not found after buildozer's initial SDK setup."
             exit 1
         fi
-        
-        # 3. Add sdkmanager to PATH for manual control
+        echo "Debugging: Detected ANDROID_HOME at: $ANDROID_HOME"
+
+        # 3. Locate the sdkmanager executable for manual control
         SDKMANAGER_PATH=""
         if [ -f "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
             SDKMANAGER_PATH="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-        elif [ -f "${ANDROID_HOME}/tools/bin/sdkmanager" ]; then
+        elif [ -f "${ANDROID_HOME}/tools/bin/sdkmanager" ]; then # Fallback for older SDK structures
             SDKMANAGER_PATH="${ANDROID_HOME}/tools/bin/sdkmanager"
         fi
         if [ -z "$SDKMANAGER_PATH" ]; then
-            echo "Error: sdkmanager executable not found."
+            echo "Error: sdkmanager executable not found in expected locations within ANDROID_HOME."
             exit 1
         fi
+        echo "Debugging: Found sdkmanager executable at: $SDKMANAGER_PATH"
+
+        # 4. Add Android SDK/tools to PATH for current session commands (needed for sdkmanager, adb, etc.)
+        # This PATH setup is temporary for this run block.
         export PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/bin:${ANDROID_HOME}/tools/bin:$PATH"
-        
-        echo "Debugging: SDK Manager path is: $SDKMANAGER_PATH"
-        
-        # 4. RC Version Purge Strategy: Delete problematic RC build-tools if they exist
-        echo "Debugging: Checking for and purging problematic RC build-tools versions..."
+        echo "Debugging: Updated PATH for SDK tools: $PATH"
+
+        # 5. RC Version Purge Strategy: Delete problematic RC build-tools if they were downloaded by buildozer
+        echo "Debugging: Checking for and purging problematic RC build-tools versions if they exist..."
         RC_BUILD_TOOLS_DIR="${ANDROID_HOME}/build-tools"
         if [ -d "$RC_BUILD_TOOLS_DIR" ]; then
             for dir in "$RC_BUILD_TOOLS_DIR"/*; do
                 if [[ "$dir" == *"-rc"* ]]; then
-                    echo "Debugging: Found problematic RC build-tools: $dir. Deleting..."
+                    echo "Debugging: Found problematic RC build-tools: $dir. Deleting this RC version."
                     rm -rf "$dir"
                 fi
             done
         fi
+        echo "Debugging: RC build-tools purge complete."
         
-        # 5. Force install specific stable build-tools (33.0.0) and platform-tools
-        echo "Debugging: Force installing stable build-tools;33.0.0 and platform-tools and accepting licenses..."
-        yes | "$SDKMANAGER_PATH" "platform-tools" || true
+        # 6. Force install specific stable build-tools (33.0.0) and platform-tools components
+        # This uses the located sdkmanager path to ensure correct components are installed.
+        echo "Debugging: Force installing stable platform-tools and build-tools;33.0.0 and accepting all licenses."
+        yes | "$SDKMANAGER_PATH" "platform-tools" || true # || true to allow continuation if a component is already installed/latest
         yes | "$SDKMANAGER_PATH" "build-tools;33.0.0" || true
         yes | "$SDKMANAGER_PATH" --licenses || true # Accept any remaining licenses
         
-        # 6. Final buildozer android debug command
-        echo "Debugging: Starting final buildozer android debug..."
+        echo "All critical Android SDK components are now force installed and licenses accepted for target versions."
+
+        # 7. Final buildozer android debug command to build the APK
+        echo "Debugging: Starting final buildozer android debug command to build the APK..."
         buildozer android debug
 
     - name: Upload APK
@@ -102,7 +112,7 @@ jobs:
         path: bin/*.apk
         
     - name: Collect Full Build Logs (for debugging)
-      if: always()
+      if: always() # 빌드 성공/실패 여부와 상관없이 항상 로그 수집
       run: |
         cd ${{ github.workspace }}
         LOG_DIR=".buildozer/logs"
